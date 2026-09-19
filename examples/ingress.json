@@ -1,0 +1,29 @@
+{
+  "apiVersion": "config.openshift.io/v1",
+  "kind": "ClusterOperator",
+  "metadata": {
+    "name": "ingress"
+  },
+  "spec": {},
+  "status": {
+    "conditions": [
+      {
+        "type": "Available",
+        "status": "True",
+        "lastTransitionTime": "2026-09-19T10:00:00Z"
+      },
+      {
+        "type": "Progressing",
+        "status": "False",
+        "lastTransitionTime": "2026-09-19T10:00:00Z"
+      },
+      {
+        "type": "Degraded",
+        "status": "True",
+        "reason": "RouterDeploymentUnavailable",
+        "message": "One router replica is unavailable",
+        "lastTransitionTime": "2026-09-19T10:00:00Z"
+      }
+    ]
+  }
+}
