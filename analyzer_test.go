@@ -5,15 +5,18 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	configv1 "github.com/openshift/api/config/v1"
 )
 
-func testOperator(conditions ...Condition) ClusterOperator {
-	operator := ClusterOperator{
-		APIVersion: "config.openshift.io/v1",
-		Kind:       "ClusterOperator",
-	}
+func testOperator(
+	conditions ...configv1.ClusterOperatorStatusCondition,
+) configv1.ClusterOperator {
+	var operator configv1.ClusterOperator
 
-	operator.Metadata.Name = "ingress"
+	operator.APIVersion = "config.openshift.io/v1"
+	operator.Kind = "ClusterOperator"
+	operator.Name = "ingress"
 	operator.Status.Conditions = conditions
 
 	return operator
@@ -22,56 +25,80 @@ func testOperator(conditions ...Condition) ClusterOperator {
 func TestAnalyzeOperator(t *testing.T) {
 	tests := []struct {
 		name       string
-		conditions []Condition
+		conditions []configv1.ClusterOperatorStatusCondition
 		wantResult string
 		wantCode   int
 		wantError  string
 	}{
 		{
 			name: "healthy operator",
-			conditions: []Condition{
-				{Type: "Available", Status: "True"},
-				{Type: "Degraded", Status: "False"},
+			conditions: []configv1.ClusterOperatorStatusCondition{
+				{
+					Type:   configv1.OperatorAvailable,
+					Status: configv1.ConditionTrue,
+				},
+				{
+					Type:   configv1.OperatorDegraded,
+					Status: configv1.ConditionFalse,
+				},
 			},
 			wantResult: "NOT DEGRADED (reported)",
 			wantCode:   0,
 		},
 		{
 			name: "degraded operator",
-			conditions: []Condition{
-				{Type: "Degraded", Status: "True"},
+			conditions: []configv1.ClusterOperatorStatusCondition{
+				{
+					Type:   configv1.OperatorDegraded,
+					Status: configv1.ConditionTrue,
+				},
 			},
 			wantResult: "DEGRADED",
 			wantCode:   2,
 		},
 		{
 			name: "unknown status",
-			conditions: []Condition{
-				{Type: "Degraded", Status: "Unknown"},
+			conditions: []configv1.ClusterOperatorStatusCondition{
+				{
+					Type:   configv1.OperatorDegraded,
+					Status: configv1.ConditionUnknown,
+				},
 			},
 			wantResult: "UNKNOWN",
 			wantCode:   3,
 		},
 		{
 			name: "missing condition",
-			conditions: []Condition{
-				{Type: "Available", Status: "True"},
+			conditions: []configv1.ClusterOperatorStatusCondition{
+				{
+					Type:   configv1.OperatorAvailable,
+					Status: configv1.ConditionTrue,
+				},
 			},
 			wantResult: "UNKNOWN (Degraded condition missing)",
 			wantCode:   3,
 		},
 		{
 			name: "duplicate condition",
-			conditions: []Condition{
-				{Type: "Degraded", Status: "True"},
-				{Type: "Degraded", Status: "False"},
+			conditions: []configv1.ClusterOperatorStatusCondition{
+				{
+					Type:   configv1.OperatorDegraded,
+					Status: configv1.ConditionTrue,
+				},
+				{
+					Type:   configv1.OperatorDegraded,
+					Status: configv1.ConditionFalse,
+				},
 			},
 			wantError: "duplicate Degraded condition",
 		},
 		{
 			name: "invalid status",
-			conditions: []Condition{
-				{Type: "Degraded", Status: "Broken"},
+			conditions: []configv1.ClusterOperatorStatusCondition{
+				{
+					Type:   configv1.OperatorDegraded,
+					Status: configv1.ConditionStatus("Broken"),
+				},
 			},
 			wantError: "invalid Degraded status",
 		},

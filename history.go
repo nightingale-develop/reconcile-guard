@@ -7,17 +7,19 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	configv1 "github.com/openshift/api/config/v1"
 )
 
 type Observation struct {
-	ObservedAt time.Time       `json:"observedAt"`
-	Operator   ClusterOperator `json:"operator"`
+	ObservedAt time.Time                `json:"observedAt"`
+	Operator   configv1.ClusterOperator `json:"operator"`
 }
 
 type Transition struct {
-	Condition string
-	From      string
-	To        string
+	Condition configv1.ClusterStatusConditionType
+	From      configv1.ConditionStatus
+	To        configv1.ConditionStatus
 	FromTime  time.Time
 	ToTime    time.Time
 }
@@ -53,7 +55,11 @@ func readHistory(path string) ([]Observation, error) {
 		var observation Observation
 
 		if err := json.Unmarshal(data, &observation); err != nil {
-			return nil, fmt.Errorf("line %d: decode JSON: %w", line, err)
+			return nil, fmt.Errorf(
+				"line %d: decode JSON: %w",
+				line,
+				err,
+			)
 		}
 
 		observations = append(observations, observation)
@@ -75,10 +81,15 @@ func analyzeHistory(observations []Observation) (HistoryReport, error) {
 		return HistoryReport{}, fmt.Errorf("history has no observations")
 	}
 
-	conditionTypes := [...]string{"Available", "Progressing", "Degraded"}
+	conditionTypes := [...]configv1.ClusterStatusConditionType{
+		configv1.OperatorAvailable,
+		configv1.OperatorProgressing,
+		configv1.OperatorDegraded,
+	}
 
 	var report HistoryReport
-	var previous map[string]string
+
+	var previous map[configv1.ClusterStatusConditionType]configv1.ConditionStatus
 
 	for i, observation := range observations {
 		if observation.ObservedAt.IsZero() {
@@ -89,22 +100,28 @@ func analyzeHistory(observations []Observation) (HistoryReport, error) {
 		}
 
 		if _, err := analyzeOperator(observation.Operator); err != nil {
-			return HistoryReport{}, fmt.Errorf("observation %d: %w", i+1, err)
+			return HistoryReport{}, fmt.Errorf(
+				"observation %d: %w",
+				i+1,
+				err,
+			)
 		}
 
 		if i == 0 {
-			report.Operator = observation.Operator.Metadata.Name
+			report.Operator = observation.Operator.Name
 		} else {
-			if observation.Operator.Metadata.Name != report.Operator {
+			if observation.Operator.Name != report.Operator {
 				return HistoryReport{}, fmt.Errorf(
 					"observation %d: operator changed from %q to %q",
 					i+1,
 					report.Operator,
-					observation.Operator.Metadata.Name,
+					observation.Operator.Name,
 				)
 			}
 
-			if !observation.ObservedAt.After(observations[i-1].ObservedAt) {
+			if !observation.ObservedAt.After(
+				observations[i-1].ObservedAt,
+			) {
 				return HistoryReport{}, fmt.Errorf(
 					"observation %d: observedAt must be later than the previous observation",
 					i+1,
@@ -112,11 +129,15 @@ func analyzeHistory(observations []Observation) (HistoryReport, error) {
 			}
 		}
 
-		current := make(map[string]string)
+		current := make(
+			map[configv1.ClusterStatusConditionType]configv1.ConditionStatus,
+		)
 
 		for _, condition := range observation.Operator.Status.Conditions {
 			switch condition.Type {
-			case "Available", "Progressing", "Degraded":
+			case configv1.OperatorAvailable,
+				configv1.OperatorProgressing,
+				configv1.OperatorDegraded:
 			default:
 				continue
 			}
@@ -130,7 +151,9 @@ func analyzeHistory(observations []Observation) (HistoryReport, error) {
 			}
 
 			switch condition.Status {
-			case "True", "False", "Unknown":
+			case configv1.ConditionTrue,
+				configv1.ConditionFalse,
+				configv1.ConditionUnknown:
 			default:
 				return HistoryReport{}, fmt.Errorf(
 					"observation %d: invalid %s status: %q",
@@ -144,9 +167,9 @@ func analyzeHistory(observations []Observation) (HistoryReport, error) {
 		}
 
 		if i > 0 {
-			for _, kind := range conditionTypes {
-				before, hadBefore := previous[kind]
-				after, hasAfter := current[kind]
+			for _, conditionType := range conditionTypes {
+				before, hadBefore := previous[conditionType]
+				after, hasAfter := current[conditionType]
 
 				if !hadBefore || !hasAfter {
 					report.UncomparedPairs++
@@ -157,7 +180,7 @@ func analyzeHistory(observations []Observation) (HistoryReport, error) {
 					report.Transitions = append(
 						report.Transitions,
 						Transition{
-							Condition: kind,
+							Condition: conditionType,
 							From:      before,
 							To:        after,
 							FromTime:  observations[i-1].ObservedAt,

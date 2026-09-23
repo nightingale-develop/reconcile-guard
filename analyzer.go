@@ -1,36 +1,20 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
 
-type Condition struct {
-	Type    string `json:"type"`
-	Status  string `json:"status"`
-	Reason  string `json:"reason"`
-	Message string `json:"message"`
-}
-
-type ClusterOperator struct {
-	APIVersion string `json:"apiVersion"`
-	Kind       string `json:"kind"`
-
-	Metadata struct {
-		Name string `json:"name"`
-	} `json:"metadata"`
-
-	Status struct {
-		Conditions []Condition `json:"conditions"`
-	} `json:"status"`
-}
+	configv1 "github.com/openshift/api/config/v1"
+)
 
 type Analysis struct {
 	Name        string
-	Degraded    Condition
+	Degraded    configv1.ClusterOperatorStatusCondition
 	HasDegraded bool
 	Result      string
 	ExitCode    int
 }
 
-func analyzeOperator(operator ClusterOperator) (Analysis, error) {
+func analyzeOperator(operator configv1.ClusterOperator) (Analysis, error) {
 	if operator.APIVersion != "config.openshift.io/v1" ||
 		operator.Kind != "ClusterOperator" {
 		return Analysis{}, fmt.Errorf(
@@ -40,16 +24,16 @@ func analyzeOperator(operator ClusterOperator) (Analysis, error) {
 		)
 	}
 
-	if operator.Metadata.Name == "" {
+	if operator.Name == "" {
 		return Analysis{}, fmt.Errorf("operator name is missing")
 	}
 
 	result := Analysis{
-		Name: operator.Metadata.Name,
+		Name: operator.Name,
 	}
 
 	for _, condition := range operator.Status.Conditions {
-		if condition.Type != "Degraded" {
+		if condition.Type != configv1.OperatorDegraded {
 			continue
 		}
 
@@ -64,19 +48,20 @@ func analyzeOperator(operator ClusterOperator) (Analysis, error) {
 	if !result.HasDegraded {
 		result.Result = "UNKNOWN (Degraded condition missing)"
 		result.ExitCode = 3
+
 		return result, nil
 	}
 
 	switch result.Degraded.Status {
-	case "True":
+	case configv1.ConditionTrue:
 		result.Result = "DEGRADED"
 		result.ExitCode = 2
 
-	case "False":
+	case configv1.ConditionFalse:
 		result.Result = "NOT DEGRADED (reported)"
 		result.ExitCode = 0
 
-	case "Unknown":
+	case configv1.ConditionUnknown:
 		result.Result = "UNKNOWN"
 		result.ExitCode = 3
 

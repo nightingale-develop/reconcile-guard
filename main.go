@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	configv1 "github.com/openshift/api/config/v1"
 )
 
 func main() {
@@ -28,7 +30,10 @@ func run() int {
 
 	case "check":
 		if len(os.Args) != 3 {
-			fmt.Fprintln(os.Stderr, "Usage: reconcile-guard check <file>")
+			fmt.Fprintln(
+				os.Stderr,
+				"Usage: reconcile-guard check <file>",
+			)
 			return 1
 		}
 
@@ -42,7 +47,10 @@ func run() int {
 
 	case "replay":
 		if len(os.Args) != 3 {
-			fmt.Fprintln(os.Stderr, "Usage: reconcile-guard replay <file.jsonl>")
+			fmt.Fprintln(
+				os.Stderr,
+				"Usage: reconcile-guard replay <file.jsonl>",
+			)
 			return 1
 		}
 
@@ -59,10 +67,15 @@ func run() int {
 		}
 
 		printHistoryReport(report)
+
 		return 0
 
 	default:
-		fmt.Fprintln(os.Stderr, "Unknown command:", os.Args[1])
+		fmt.Fprintln(
+			os.Stderr,
+			"Unknown command:",
+			os.Args[1],
+		)
 		return 1
 	}
 }
@@ -73,7 +86,7 @@ func checkFile(path string) (int, error) {
 		return 0, fmt.Errorf("read file %q: %w", path, err)
 	}
 
-	var operator ClusterOperator
+	var operator configv1.ClusterOperator
 
 	if err := json.Unmarshal(data, &operator); err != nil {
 		return 0, fmt.Errorf("decode JSON: %w", err)
@@ -87,11 +100,20 @@ func checkFile(path string) (int, error) {
 	fmt.Println("Operator:", result.Name)
 
 	if result.HasDegraded {
-		fmt.Println("Degraded:", result.Degraded.Status)
+		fmt.Println(
+			"Degraded:",
+			result.Degraded.Status,
+		)
 
-		if result.Degraded.Status == "True" {
-			fmt.Println("Reason:", result.Degraded.Reason)
-			fmt.Println("Message:", result.Degraded.Message)
+		if result.Degraded.Status == configv1.ConditionTrue {
+			fmt.Println(
+				"Reason:",
+				result.Degraded.Reason,
+			)
+			fmt.Println(
+				"Message:",
+				result.Degraded.Message,
+			)
 		}
 	}
 
@@ -103,10 +125,14 @@ func checkFile(path string) (int, error) {
 func printHistoryReport(report HistoryReport) {
 	fmt.Println("Operator:", report.Operator)
 	fmt.Println("Observations:", report.Observations)
-	fmt.Println("Observed transitions:", len(report.Transitions))
+	fmt.Println(
+		"Observed transitions:",
+		len(report.Transitions),
+	)
 
 	for _, transition := range report.Transitions {
-		fmt.Printf("  %s: %s -> %s (between %s and %s)\n",
+		fmt.Printf(
+			"  %s: %s -> %s (between %s and %s)\n",
 			transition.Condition,
 			transition.From,
 			transition.To,
@@ -115,19 +141,37 @@ func printHistoryReport(report HistoryReport) {
 		)
 	}
 
-	fmt.Println("Uncompared adjacent condition pairs:", report.UncomparedPairs)
-	fmt.Println("Verdict: NOT EVALUATED (transition report only)")
+	fmt.Println(
+		"Uncompared adjacent condition pairs:",
+		report.UncomparedPairs,
+	)
+
+	fmt.Println(
+		"Verdict: NOT EVALUATED (transition report only)",
+	)
 }
 
 func printUsage() {
-	fmt.Println("ReconcileGuard - OpenShift operator diagnostics")
+	fmt.Println(
+		"ReconcileGuard - OpenShift operator diagnostics",
+	)
 	fmt.Println()
+
 	fmt.Println("Usage:")
 	fmt.Println("  reconcile-guard <command>")
 	fmt.Println()
+
 	fmt.Println("Available commands:")
-	fmt.Println("  version       Show application version")
-	fmt.Println("  help          Show this help message")
-	fmt.Println("  check <file>  Check an OpenShift ClusterOperator")
-	fmt.Println("  replay <file.jsonl>  Show reported condition changes across snapshots")
+	fmt.Println(
+		"  version       Show application version",
+	)
+	fmt.Println(
+		"  help          Show this help message",
+	)
+	fmt.Println(
+		"  check <file>  Check an OpenShift ClusterOperator",
+	)
+	fmt.Println(
+		"  replay <file.jsonl>  Show reported condition changes across snapshots",
+	)
 }
