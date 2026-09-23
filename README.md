@@ -1,44 +1,52 @@
 # ReconcileGuard
 
-ReconcileGuard is an early Go CLI prototype for diagnosing Red Hat OpenShift operators from a saved `ClusterOperator` JSON object.
+ReconcileGuard is an open-source Go CLI for analyzing the lifecycle of OpenShift platform operators.
 
-The project's long-term goal is to help investigate operators that fail to reach a stable state, reconcile unnecessarily, generate excessive Kubernetes API traffic, or exhibit anomalous state transitions during normal operation and cluster upgrades. The current prototype only evaluates the reported `Degraded` condition in a single JSON snapshot.
+The long-term goal is to verify how OpenShift operators behave before, during, and after platform upgrades by reconstructing their state timelines and checking documented lifecycle contracts.
 
-## Current capabilities
+The project is currently an early offline prototype. It works with saved `ClusterOperator` data and does not require a running OpenShift cluster.
 
-- Commands: `version`, `help`, and `check <file>`.
-- Read one local JSON object with `apiVersion: config.openshift.io/v1` and `kind: ClusterOperator`.
-- Require a non-empty operator name.
-- Evaluate `Degraded=True`, `False`, or `Unknown`, and report a missing `Degraded` condition.
-- Reject duplicate `Degraded` conditions and invalid `Degraded` status values.
-- Print the reason and message when the operator reports `Degraded=True`.
-- Return diagnostic exit codes suitable for shell scripts.
+## Features
 
-## Build and run
+ReconcileGuard currently supports:
 
-The module currently requires Go 1.27.1 or later. It uses only the Go standard library.
+- Inspecting a saved OpenShift `ClusterOperator` JSON object.
+- Evaluating the reported `Degraded` condition.
+- Replaying a sequence of operator observations from JSONL.
+- Detecting changes in `Available`, `Progressing`, and `Degraded`.
+- Detecting missing conditions that prevent reliable comparison.
+- Validating chronological order of observations.
+- Reporting transition intervals without inventing an exact transition time.
+
+It does **not** currently determine whether an operator behaved correctly during an OpenShift upgrade.
+
+## Build
+
+Requires Go 1.27.1 or later.
 
 ```sh
 git clone https://github.com/nightingale-develop/reconcile-guard.git
 cd reconcile-guard
+
 go build -o reconcile-guard .
-./reconcile-guard version
-./reconcile-guard help
-./reconcile-guard check examples/ingress-ok.json
 ```
 
-The version command currently prints `ReconcileGuard v0.1.0-dev`.
+Check the CLI:
 
-## Example diagnosis
+```sh
+./reconcile-guard help
+./reconcile-guard version
+```
 
-The files in `examples/` are sample inputs, not evidence of a live cluster test. To inspect the degraded example:
+## Inspect a ClusterOperator
+
+The files under `examples/` contain synthetic OpenShift data.
 
 ```sh
 ./reconcile-guard check examples/ingress.json
-echo $?
 ```
 
-Output:
+Example output:
 
 ```text
 Operator: ingress
@@ -46,23 +54,57 @@ Degraded: True
 Reason: RouterDeploymentUnavailable
 Message: One router replica is unavailable
 Result: DEGRADED
-2
 ```
 
-The non-degraded example, `examples/ingress-ok.json`, prints `Result: NOT DEGRADED (reported)` and exits with code `0`.
+A reported `Degraded=False` condition only means that the operator is not reporting itself as degraded. It does not prove overall operator health.
 
-### Exit codes
+## Replay operator history
+
+A JSONL history contains one observation per line.
+
+```sh
+./reconcile-guard replay examples/ingress-history.jsonl
+```
+
+Example:
+
+```text
+Operator: ingress
+Observations: 3
+Observed transitions: 2
+  Progressing: False -> True (between 2026-09-19T10:00:00Z and 2026-09-19T10:05:00Z)
+  Progressing: True -> False (between 2026-09-19T10:05:00Z and 2026-09-19T10:10:00Z)
+Uncompared adjacent condition pairs: 0
+Verdict: NOT EVALUATED (transition report only)
+```
+
+A transition means that two adjacent observations reported different values.
+
+For example:
+
+```text
+10:00  Progressing=False
+10:05  Progressing=True
+```
+
+ReconcileGuard knows that the reported status changed sometime between those observations. It does not claim to know the exact moment when the change occurred.
+
+`observedAt` is the time when the snapshot was captured. It is intentionally separate from OpenShift's `lastTransitionTime`.
+
+## Exit codes
+
+For `check`:
 
 | Code | Meaning |
 | --- | --- |
-| `0` | `check`: `Degraded=False` (reported). Also returned by `help`, `version`, and invocation without arguments. |
-| `1` | Command usage error, file read error, malformed JSON, unsupported resource, missing name, duplicate `Degraded`, or invalid `Degraded` status. |
-| `2` | `Degraded=True`. |
-| `3` | `Degraded=Unknown` or no `Degraded` condition. |
+| `0` | `Degraded=False` |
+| `1` | Invalid input or command error |
+| `2` | `Degraded=True` |
+| `3` | `Degraded=Unknown` or missing |
 
-Diagnostics are written to standard output; errors are written to standard error. A reported non-degraded condition does not establish overall operator health or stability.
+For `replay`, exit code `0` currently means that the history was successfully processed. It is **not** a health or upgrade-contract verdict.
 
-## Development and tests
+## Development
 
 ```sh
 go fmt ./...
@@ -72,26 +114,34 @@ go test -race -count=1 ./...
 go build -o reconcile-guard .
 ```
 
-The race detector requires a supported platform and a working C compiler with cgo enabled. Unit tests cover all three supported `Degraded` statuses, a missing condition, a duplicate condition, an invalid status, and malformed JSON (`TestCheckFileRejectsInvalidJSON`).
+Tests cover snapshot analysis, malformed JSON, history parsing, transition detection, missing conditions, invalid timestamps, duplicate conditions, and invalid statuses.
 
-## Limitations
+## Current limitations
 
-- No OpenShift API connection, authentication, discovery, or live monitoring.
-- No reconciliation loop detection, API operation counting, or analysis over time.
-- No validation of `Available`, `Progressing`, or other condition types; duplicate detection applies only to `Degraded`.
-- No full Kubernetes schema validation. Unknown JSON fields are ignored.
-- Input must be one `ClusterOperator` object, not a resource list.
-- No assessment of cluster upgrade safety or compatibility certification against OpenShift versions.
+ReconcileGuard currently:
+
+- Works only with offline data.
+- Does not connect to an OpenShift cluster.
+- Does not analyze `ClusterVersion`.
+- Does not understand upgrade phases yet.
+- Does not evaluate lifecycle contracts.
+- Does not perform root-cause analysis.
+- Has not yet been validated against a real OpenShift environment.
+
+The current `ClusterOperator` model is a small local representation of the OpenShift API.
 
 ## Roadmap
 
-The following capabilities are planned, not implemented:
+Next steps:
 
-- Connect to the OpenShift API and collect operator state.
-- Observe state transitions over time and define stability criteria.
-- Investigate repeated reconciliation and excessive Kubernetes API operations using appropriate telemetry.
-- Compare behavior before, during, and after cluster upgrades.
-- Produce richer diagnostic reports and support CI workflows.
+1. Replace local OpenShift structures with official `openshift/api` Go types.
+2. Add `ClusterVersion` observations.
+3. Correlate operator timelines with OpenShift upgrade phases.
+4. Introduce evidence-based lifecycle contract checks.
+5. Add `PASS`, `FAIL`, and `INCONCLUSIVE` results.
+6. Validate the tool against a real OpenShift environment.
+
+The focus is OpenShift operator lifecycle analysis rather than generic Kubernetes chaos testing or reconciliation-loop detection.
 
 ## License
 
