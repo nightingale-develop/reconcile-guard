@@ -45,6 +45,41 @@ func run() int {
 
 		return code
 
+	case "check-version":
+		if len(os.Args) != 3 {
+			fmt.Fprintln(os.Stderr, "Usage: reconcile-guard check-version <file.json>")
+			return 1
+		}
+		if err := checkVersionFile(os.Args[2]); err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			return 1
+		}
+		return 0
+
+	case "replay-version":
+		if len(os.Args) != 3 {
+			fmt.Fprintln(
+				os.Stderr,
+				"Usage: reconcile-guard replay-version <file.jsonl>",
+			)
+			return 1
+		}
+
+		observations, err := readClusterVersionHistory(os.Args[2])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			return 1
+		}
+
+		report, err := analyzeClusterVersionHistory(observations)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			return 1
+		}
+
+		printClusterVersionHistoryReport(report)
+		return 0
+
 	case "replay":
 		if len(os.Args) != 3 {
 			fmt.Fprintln(
@@ -171,6 +206,8 @@ func printUsage() {
 	fmt.Println(
 		"  check <file>  Check an OpenShift ClusterOperator",
 	)
+	fmt.Println("  check-version <file.json>  Inspect a saved OpenShift ClusterVersion")
+	fmt.Println("  replay-version <file.jsonl>  Summarize ClusterVersion observations")
 	fmt.Println(
 		"  replay <file.jsonl>  Show reported condition changes across snapshots",
 	)

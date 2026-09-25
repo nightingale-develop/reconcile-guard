@@ -1,0 +1,15 @@
+{
+  "apiVersion": "config.openshift.io/v1",
+  "kind": "ClusterVersion",
+  "metadata": {"name": "version"},
+  "status": {
+    "desired": {"version": "4.20.0", "image": "example.invalid/openshift/release:4.20.0"},
+    "conditions": [
+      {"type": "Available", "status": "True"},
+      {"type": "Progressing", "status": "True", "reason": "SyntheticExample", "message": "Synthetic update observation"}
+    ],
+    "history": [
+      {"version": "4.20.0", "image": "example.invalid/openshift/release:4.20.0", "state": "Partial", "startedTime": "2026-09-25T10:00:00Z", "completionTime": null}
+    ]
+  }
+}

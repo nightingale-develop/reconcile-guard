@@ -58,6 +58,33 @@ Result: DEGRADED
 
 A reported `Degraded=False` condition only means that the operator is not reporting itself as degraded. It does not prove overall operator health.
 
+## Inspect a ClusterVersion
+
+```sh
+./reconcile-guard check-version examples/cluster-version.json
+```
+
+This offline command reads an official `configv1.ClusterVersion` JSON snapshot and reports `status.desired` (not `spec.desiredUpdate`), conditions, and update history in supplied order. The example is synthetic. Missing fields remain unreported; no upgrade phase or correctness is inferred. Condition types must be non-empty and unique, with `True`, `False`, or `Unknown` statuses. This is not full API-schema or update-history validation.
+
+Exit `0` means successful processing, not PASS; input/usage errors return `1`. Output ends with `Verdict: NOT EVALUATED (snapshot report only)`.
+
+A timestamped ClusterVersion history can also be replayed from JSONL:
+
+```sh
+./reconcile-guard replay-version examples/cluster-version-history.jsonl
+```
+
+Example output:
+
+```text
+ClusterVersion: version
+Observations: 3
+Desired version: "4.20.0"
+Verdict: NOT EVALUATED (ClusterVersion summary only)
+```
+
+`replay-version` validates the observation order and reports the desired version from the latest snapshot. It does not infer upgrade phases yet.
+
 ## Replay operator history
 
 A JSONL history contains one observation per line.
@@ -102,7 +129,7 @@ For `check`:
 | `2` | `Degraded=True` |
 | `3` | `Degraded=Unknown` or missing |
 
-For `replay`, exit code `0` currently means that the history was successfully processed. It is **not** a health or upgrade-contract verdict.
+For `replay` and `replay-version`, exit code `0` currently means that the history was successfully processed. It is **not** a health or upgrade-contract verdict.
 
 ## Development
 
@@ -114,7 +141,7 @@ go test -race -count=1 ./...
 go build -o reconcile-guard .
 ```
 
-Tests cover snapshot analysis, malformed JSON, history parsing, transition detection, missing conditions, invalid timestamps, duplicate conditions, and invalid statuses.
+Tests cover ClusterOperator and ClusterVersion snapshots, JSONL history parsing, transition detection, chronological validation, malformed input, duplicate conditions, and invalid statuses.
 
 ## Current limitations
 
@@ -122,24 +149,22 @@ ReconcileGuard currently:
 
 - Works only with offline data.
 - Does not connect to an OpenShift cluster.
-- Does not analyze `ClusterVersion`.
-- Does not understand upgrade phases yet.
+- Can validate and summarize ClusterVersion observation timelines, but does not reconstruct upgrade phases yet.
 - Does not evaluate lifecycle contracts.
 - Does not perform root-cause analysis.
 - Has not yet been validated against a real OpenShift environment.
 
-The current `ClusterOperator` model is a small local representation of the OpenShift API.
+ClusterOperator and ClusterVersion use official `openshift/api/config/v1` Go types.
 
 ## Roadmap
 
 Next steps:
 
-1. Replace local OpenShift structures with official `openshift/api` Go types.
-2. Add `ClusterVersion` observations.
-3. Correlate operator timelines with OpenShift upgrade phases.
-4. Introduce evidence-based lifecycle contract checks.
-5. Add `PASS`, `FAIL`, and `INCONCLUSIVE` results.
-6. Validate the tool against a real OpenShift environment.
+1. Reconstruct upgrade phases from ClusterVersion observations.
+2. Correlate operator timelines with OpenShift upgrade phases.
+3. Introduce evidence-based lifecycle contract checks.
+4. Add `PASS`, `FAIL`, and `INCONCLUSIVE` results.
+5. Validate the tool against a real OpenShift environment.
 
 The focus is OpenShift operator lifecycle analysis rather than generic Kubernetes chaos testing or reconciliation-loop detection.
 
