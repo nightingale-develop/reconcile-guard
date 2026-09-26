@@ -81,6 +81,7 @@ func (c cli) printUsage() {
 	fmt.Fprintln(c.stdout)
 
 	fmt.Fprintln(c.stdout, "Available commands:")
+	fmt.Fprintln(c.stdout, "  verify-progressing <operator-history.jsonl> <max-duration>  Check observed Progressing runs against a user limit")
 	fmt.Fprintln(c.stdout,
 		"  version       Show application version",
 	)
@@ -223,4 +224,29 @@ func (c cli) printUpgradeContractReport(
 		fmt.Fprintf(c.stdout, " correlation=%s interval=[%s,%s]\n", finding.Correlation,
 			finding.FromTime.Format(time.RFC3339Nano), finding.ToTime.Format(time.RFC3339Nano))
 	}
+}
+
+func (c cli) printProgressingReport(report contracts.ProgressingReport) {
+	fmt.Fprintln(c.stdout, "Contract: observed-progressing-duration")
+	fmt.Fprintln(c.stdout, "Operator:", report.Operator)
+	fmt.Fprintln(c.stdout, "Maximum duration (user policy):", report.Limit)
+	fmt.Fprintln(c.stdout, "Observations:", report.Observations)
+	fmt.Fprintln(c.stdout, "Missing/Unknown Progressing:", report.MissingConditions)
+	fmt.Fprintln(c.stdout, "Verdict:", report.Verdict)
+	fmt.Fprintln(c.stdout, "Evidence:")
+	for _, episode := range report.Episodes {
+		fmt.Fprintf(c.stdout, "  %s Progressing=True samples=[%s,%s] observed-span=%s",
+			episode.Verdict, episode.FirstTrue.Format(time.RFC3339Nano), episode.LastTrue.Format(time.RFC3339Nano), episode.ObservedSpan)
+		if !episode.BeforeFalse.IsZero() {
+			fmt.Fprintf(c.stdout, " preceding-False=%s", episode.BeforeFalse.Format(time.RFC3339Nano))
+		}
+		if !episode.AfterFalse.IsZero() {
+			fmt.Fprintf(c.stdout, " following-False=%s", episode.AfterFalse.Format(time.RFC3339Nano))
+		}
+		if !episode.BeforeFalse.IsZero() && !episode.AfterFalse.IsZero() {
+			fmt.Fprintf(c.stdout, " maximum-span=%s", episode.MaximumSpan)
+		}
+		fmt.Fprintln(c.stdout)
+	}
+	fmt.Fprintln(c.stdout, "Scope: observed samples only; gaps are not bridged; continuous state between samples is not proven.")
 }

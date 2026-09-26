@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/nightingale-develop/reconcile-guard/internal/contracts"
 	"github.com/nightingale-develop/reconcile-guard/internal/operator"
@@ -116,6 +117,29 @@ func (c cli) run(args []string) int {
 		c.printHistoryReport(report)
 
 		return 0
+
+	case "verify-progressing":
+		if len(args) != 3 {
+			fmt.Fprintln(c.stderr, "Usage: reconcile-guard verify-progressing <operator-history.jsonl> <max-duration>")
+			return 1
+		}
+		limit, err := time.ParseDuration(args[2])
+		if err != nil || limit <= 0 {
+			fmt.Fprintln(c.stderr, "Error: max-duration must be a positive Go duration, for example 30m")
+			return 1
+		}
+		observations, err := operator.ReadHistory(args[1])
+		if err != nil {
+			fmt.Fprintln(c.stderr, "Error:", err)
+			return 1
+		}
+		report, err := contracts.VerifyProgressing(observations, limit)
+		if err != nil {
+			fmt.Fprintln(c.stderr, "Error:", err)
+			return 1
+		}
+		c.printProgressingReport(report)
+		return contractExitCode(report.Verdict)
 
 	case "verify-upgrade":
 		if len(args) != 3 {
