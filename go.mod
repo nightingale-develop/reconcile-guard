@@ -2,7 +2,10 @@ module github.com/nightingale-develop/reconcile-guard
 
 go 1.27.1
 
-require github.com/openshift/api v0.0.0-20260923043708-9abfa327cff2
+require (
+	github.com/openshift/api v0.0.0-20260923043708-9abfa327cff2
+	k8s.io/apimachinery v0.36.2
+)
 
 require (
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
@@ -17,7 +20,6 @@ require (
 	golang.org/x/text v0.34.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/api v0.36.2 // indirect
-	k8s.io/apimachinery v0.36.2 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288 // indirect
 	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2 // indirect

@@ -1,4 +1,4 @@
-package main
+package operator
 
 import (
 	"bufio"
@@ -31,7 +31,7 @@ type HistoryReport struct {
 	UncomparedPairs int
 }
 
-func readHistory(path string) ([]Observation, error) {
+func ReadHistory(path string) ([]Observation, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open history %q: %w", path, err)
@@ -66,7 +66,7 @@ func readHistory(path string) ([]Observation, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("read history %q: %w", path, err)
+		return nil, fmt.Errorf("line %d: read history %q: %w", line+1, path, err)
 	}
 
 	if len(observations) == 0 {
@@ -76,7 +76,7 @@ func readHistory(path string) ([]Observation, error) {
 	return observations, nil
 }
 
-func analyzeHistory(observations []Observation) (HistoryReport, error) {
+func AnalyzeHistory(observations []Observation) (HistoryReport, error) {
 	if len(observations) == 0 {
 		return HistoryReport{}, fmt.Errorf("history has no observations")
 	}
@@ -99,7 +99,7 @@ func analyzeHistory(observations []Observation) (HistoryReport, error) {
 			)
 		}
 
-		if _, err := analyzeOperator(observation.Operator); err != nil {
+		if _, err := Analyze(observation.Operator); err != nil {
 			return HistoryReport{}, fmt.Errorf(
 				"observation %d: %w",
 				i+1,

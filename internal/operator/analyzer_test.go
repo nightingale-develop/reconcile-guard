@@ -1,8 +1,6 @@
-package main
+package operator
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -31,7 +29,7 @@ func TestAnalyzeOperator(t *testing.T) {
 		wantError  string
 	}{
 		{
-			name: "healthy operator",
+			name: "reported not degraded",
 			conditions: []configv1.ClusterOperatorStatusCondition{
 				{
 					Type:   configv1.OperatorAvailable,
@@ -108,7 +106,7 @@ func TestAnalyzeOperator(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			operator := testOperator(tc.conditions...)
 
-			got, err := analyzeOperator(operator)
+			got, err := Analyze(operator)
 
 			if tc.wantError != "" {
 				if err == nil {
@@ -145,21 +143,21 @@ func TestAnalyzeOperator(t *testing.T) {
 	}
 }
 
-func TestCheckFileRejectsInvalidJSON(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "broken.json")
-
-	err := os.WriteFile(path, []byte("{invalid"), 0600)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = checkFile(path)
-
-	if err == nil {
-		t.Fatal("expected JSON decoding error")
-	}
-
-	if !strings.Contains(err.Error(), "decode JSON") {
-		t.Fatalf("unexpected error: %v", err)
+func TestAnalyzeRejectsInvalidResource(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*configv1.ClusterOperator)
+	}{
+		{"kind", func(o *configv1.ClusterOperator) { o.Kind = "Pod" }},
+		{"apiVersion", func(o *configv1.ClusterOperator) { o.APIVersion = "v1" }},
+		{"name", func(o *configv1.ClusterOperator) { o.Name = "" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o := testOperator()
+			tc.change(&o)
+			if _, err := Analyze(o); err == nil {
+				t.Fatal("accepted invalid resource")
+			}
+		})
 	}
 }

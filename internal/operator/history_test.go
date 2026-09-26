@@ -1,4 +1,4 @@
-package main
+package operator
 
 import (
 	"os"
@@ -63,7 +63,7 @@ func TestAnalyzeHistory(t *testing.T) {
 	t.Run(
 		"reports changes only between adjacent observations",
 		func(t *testing.T) {
-			got, err := analyzeHistory([]Observation{
+			got, err := AnalyzeHistory([]Observation{
 				historyObservation(0, steady...),
 				historyObservation(5, progressing...),
 				historyObservation(10, steady...),
@@ -119,7 +119,7 @@ func TestAnalyzeHistory(t *testing.T) {
 	t.Run(
 		"unchanged reports do not create transitions",
 		func(t *testing.T) {
-			got, err := analyzeHistory([]Observation{
+			got, err := AnalyzeHistory([]Observation{
 				historyObservation(0, steady...),
 				historyObservation(5, steady...),
 			})
@@ -138,7 +138,7 @@ func TestAnalyzeHistory(t *testing.T) {
 	t.Run(
 		"missing condition does not get bridged",
 		func(t *testing.T) {
-			got, err := analyzeHistory([]Observation{
+			got, err := AnalyzeHistory([]Observation{
 				historyObservation(0, steady...),
 				historyObservation(
 					5,
@@ -168,7 +168,7 @@ func TestAnalyzeHistory(t *testing.T) {
 	t.Run(
 		"Unknown is a reported status, not a verdict",
 		func(t *testing.T) {
-			got, err := analyzeHistory([]Observation{
+			got, err := AnalyzeHistory([]Observation{
 				historyObservation(
 					0,
 					configv1.ClusterOperatorStatusCondition{
@@ -299,7 +299,7 @@ func TestAnalyzeHistory(t *testing.T) {
 
 	for _, tc := range invalid {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := analyzeHistory(tc.observations)
+			_, err := AnalyzeHistory(tc.observations)
 
 			if err == nil ||
 				!strings.Contains(err.Error(), tc.want) {
@@ -360,7 +360,7 @@ func TestReadHistory(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			got, err := readHistory(path)
+			got, err := ReadHistory(path)
 
 			if tc.wantError != "" {
 				if err == nil ||

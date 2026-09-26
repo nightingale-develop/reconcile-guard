@@ -1,10 +1,12 @@
-package main
+package contracts
 
 import (
-	"fmt"
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
+
+	"github.com/nightingale-develop/reconcile-guard/internal/operator"
+	"github.com/nightingale-develop/reconcile-guard/internal/upgrade"
 )
 
 type ContractVerdict string
@@ -18,11 +20,14 @@ const (
 const normalUpgradeConditionsContract = "normal-upgrade-operator-conditions"
 
 type ContractFinding struct {
-	ObservedAt time.Time
-	Condition  configv1.ClusterStatusConditionType
-	Status     configv1.ConditionStatus
-	Reason     string
-	Message    string
+	ObservedAt  time.Time
+	Correlation CorrelationKind
+	FromTime    time.Time
+	ToTime      time.Time
+	Condition   configv1.ClusterStatusConditionType
+	Status      configv1.ConditionStatus
+	Reason      string
+	Message     string
 }
 
 type UpgradeContractReport struct {
@@ -31,22 +36,23 @@ type UpgradeContractReport struct {
 	Verdict             ContractVerdict
 	UpgradeSamples      int
 	EvaluatedSamples    int
-	MissingSamples      int
+	AmbiguousSamples    int
+	OutsideSamples      int
 	MissingConditions   int
 	UnknownPhaseSamples int
 	Findings            []ContractFinding
 }
 
-func verifyNormalUpgradeOperatorConditions(
-	versionObservations []ClusterVersionObservation,
-	operatorObservations []Observation,
+func VerifyNormalUpgradeOperatorConditions(
+	versionObservations []upgrade.ClusterVersionObservation,
+	operatorObservations []operator.Observation,
 ) (UpgradeContractReport, error) {
-	states, err := analyzeUpgradePhases(versionObservations)
+	states, err := upgrade.AnalyzePhases(versionObservations)
 	if err != nil {
 		return UpgradeContractReport{}, err
 	}
 
-	operatorReport, err := analyzeHistory(operatorObservations)
+	operatorReport, err := operator.AnalyzeHistory(operatorObservations)
 	if err != nil {
 		return UpgradeContractReport{}, err
 	}
@@ -57,34 +63,40 @@ func verifyNormalUpgradeOperatorConditions(
 		Verdict:  ContractInconclusive,
 	}
 
-	operatorByTime := make(map[int64]Observation, len(operatorObservations))
+	correlated, err := Correlate(
+		states,
+		operatorObservations,
+	)
 
-	for _, observation := range operatorObservations {
-		operatorByTime[observation.ObservedAt.UnixNano()] = observation
+	if err != nil {
+		return UpgradeContractReport{}, err
 	}
 
-	for _, state := range states {
-		if state.Phase == UpgradePhaseUnknown {
+	for _, sample := range correlated {
+		switch sample.Kind {
+		case CorrelationAmbiguous:
+			report.AmbiguousSamples++
+			continue
+
+		case CorrelationOutside:
+			report.OutsideSamples++
+			continue
+		}
+
+		if sample.Phase == upgrade.UpgradePhaseUnknown {
 			report.UnknownPhaseSamples++
 			continue
 		}
 
-		if state.Phase != UpgradePhaseUpdating {
+		if sample.Phase != upgrade.UpgradePhaseUpdating {
 			continue
 		}
 
 		report.UpgradeSamples++
-
-		observation, exists := operatorByTime[state.ObservedAt.UnixNano()]
-		if !exists {
-			report.MissingSamples++
-			continue
-		}
-
 		report.EvaluatedSamples++
 
 		available, hasAvailable := findOperatorCondition(
-			observation.Operator.Status.Conditions,
+			sample.Observation.Operator.Status.Conditions,
 			configv1.OperatorAvailable,
 		)
 
@@ -95,14 +107,14 @@ func verifyNormalUpgradeOperatorConditions(
 			report.Findings = append(
 				report.Findings,
 				newContractFinding(
-					observation.ObservedAt,
+					sample,
 					available,
 				),
 			)
 		}
 
 		degraded, hasDegraded := findOperatorCondition(
-			observation.Operator.Status.Conditions,
+			sample.Observation.Operator.Status.Conditions,
 			configv1.OperatorDegraded,
 		)
 
@@ -113,7 +125,7 @@ func verifyNormalUpgradeOperatorConditions(
 			report.Findings = append(
 				report.Findings,
 				newContractFinding(
-					observation.ObservedAt,
+					sample,
 					degraded,
 				),
 			)
@@ -125,8 +137,9 @@ func verifyNormalUpgradeOperatorConditions(
 		report.Verdict = ContractFail
 
 	case report.UpgradeSamples == 0,
-		report.MissingSamples > 0,
 		report.MissingConditions > 0,
+		report.AmbiguousSamples > 0,
+		report.OutsideSamples > 0,
 		report.UnknownPhaseSamples > 0:
 		report.Verdict = ContractInconclusive
 
@@ -151,63 +164,17 @@ func findOperatorCondition(
 }
 
 func newContractFinding(
-	observedAt time.Time,
+	sample CorrelatedObservation,
 	condition configv1.ClusterOperatorStatusCondition,
 ) ContractFinding {
 	return ContractFinding{
-		ObservedAt: observedAt,
-		Condition:  condition.Type,
-		Status:     condition.Status,
-		Reason:     condition.Reason,
-		Message:    condition.Message,
-	}
-}
-
-func printUpgradeContractReport(report UpgradeContractReport) {
-	fmt.Println("Contract:", report.Contract)
-	fmt.Println("Operator:", report.Operator)
-	fmt.Println("Verdict:", report.Verdict)
-	fmt.Println("Upgrade samples:", report.UpgradeSamples)
-	fmt.Println("Evaluated samples:", report.EvaluatedSamples)
-	fmt.Println("Missing samples:", report.MissingSamples)
-	fmt.Println("Missing conditions:", report.MissingConditions)
-	fmt.Println("Unknown phase samples:", report.UnknownPhaseSamples)
-
-	if len(report.Findings) == 0 {
-		return
-	}
-
-	fmt.Println("Evidence:")
-
-	for _, finding := range report.Findings {
-		fmt.Printf(
-			"  %s %s=%s",
-			finding.ObservedAt.Format(time.RFC3339Nano),
-			finding.Condition,
-			finding.Status,
-		)
-
-		if finding.Reason != "" {
-			fmt.Printf(" reason=%q", finding.Reason)
-		}
-
-		if finding.Message != "" {
-			fmt.Printf(" message=%q", finding.Message)
-		}
-
-		fmt.Println()
-	}
-}
-
-func contractExitCode(verdict ContractVerdict) int {
-	switch verdict {
-	case ContractPass:
-		return 0
-	case ContractFail:
-		return 2
-	case ContractInconclusive:
-		return 3
-	default:
-		return 1
+		ObservedAt:  sample.Observation.ObservedAt,
+		Correlation: sample.Kind,
+		FromTime:    sample.FromTime,
+		ToTime:      sample.ToTime,
+		Condition:   condition.Type,
+		Status:      condition.Status,
+		Reason:      condition.Reason,
+		Message:     condition.Message,
 	}
 }

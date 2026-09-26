@@ -1,10 +1,9 @@
-package main
+package upgrade
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
 )
@@ -18,7 +17,7 @@ type ClusterVersionReport struct {
 	History    []configv1.UpdateHistory
 }
 
-func analyzeClusterVersion(version configv1.ClusterVersion) (ClusterVersionReport, error) {
+func AnalyzeClusterVersion(version configv1.ClusterVersion) (ClusterVersionReport, error) {
 	if version.APIVersion != "config.openshift.io/v1" || version.Kind != "ClusterVersion" {
 		return ClusterVersionReport{}, fmt.Errorf(
 			"unsupported resource: %s/%s",
@@ -68,7 +67,7 @@ func analyzeClusterVersion(version configv1.ClusterVersion) (ClusterVersionRepor
 	}, nil
 }
 
-func readClusterVersion(path string) (configv1.ClusterVersion, error) {
+func ReadClusterVersion(path string) (configv1.ClusterVersion, error) {
 	var version configv1.ClusterVersion
 
 	data, err := os.ReadFile(path)
@@ -81,59 +80,4 @@ func readClusterVersion(path string) (configv1.ClusterVersion, error) {
 	}
 
 	return version, nil
-}
-
-func checkVersionFile(path string) error {
-	version, err := readClusterVersion(path)
-	if err != nil {
-		return err
-	}
-
-	report, err := analyzeClusterVersion(version)
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("ClusterVersion:", report.Name)
-	fmt.Printf("Desired version (reported): %q\n", report.Desired.Version)
-	fmt.Printf("Desired image (reported): %q\n", report.Desired.Image)
-	fmt.Println("Conditions:", len(report.Conditions))
-
-	for _, condition := range report.Conditions {
-		fmt.Printf(
-			"  %s: %s (reason=%q, message=%q)\n",
-			condition.Type,
-			condition.Status,
-			condition.Reason,
-			condition.Message,
-		)
-	}
-
-	fmt.Println("Update history entries:", len(report.History))
-
-	for _, entry := range report.History {
-		started := "not reported"
-		completed := "not reported"
-
-		if !entry.StartedTime.IsZero() {
-			started = entry.StartedTime.Time.Format(time.RFC3339Nano)
-		}
-
-		if entry.CompletionTime != nil && !entry.CompletionTime.IsZero() {
-			completed = entry.CompletionTime.Time.Format(time.RFC3339Nano)
-		}
-
-		fmt.Printf(
-			"  version=%q image=%q state=%q started=%s completed=%s\n",
-			entry.Version,
-			entry.Image,
-			entry.State,
-			started,
-			completed,
-		)
-	}
-
-	fmt.Println("Verdict: NOT EVALUATED (snapshot report only)")
-
-	return nil
 }

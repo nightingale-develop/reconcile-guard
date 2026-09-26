@@ -1,21 +1,22 @@
-package main
+package upgrade
 
 import (
 	"testing"
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestAnalyzeUpgradePhases(t *testing.T) {
-	observations, err := readClusterVersionHistory(
-		"examples/cluster-version-history.jsonl",
+	observations, err := ReadHistory(
+		"../../examples/cluster-version-history.jsonl",
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	states, err := analyzeUpgradePhases(observations)
+	states, err := AnalyzePhases(observations)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,8 +58,8 @@ func TestAnalyzeUpgradePhases(t *testing.T) {
 func TestUpgradePhaseReturnsStableAfterCompletion(
 	t *testing.T,
 ) {
-	observations, err := readClusterVersionHistory(
-		"examples/cluster-version-history.jsonl",
+	observations, err := ReadHistory(
+		"../../examples/cluster-version-history.jsonl",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +70,7 @@ func TestUpgradePhaseReturnsStableAfterCompletion(
 
 	observations = append(observations, last)
 
-	states, err := analyzeUpgradePhases(observations)
+	states, err := AnalyzePhases(observations)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,8 +82,8 @@ func TestUpgradePhaseReturnsStableAfterCompletion(
 }
 
 func TestUpgradePhaseUnknown(t *testing.T) {
-	observations, err := readClusterVersionHistory(
-		"examples/cluster-version-history.jsonl",
+	observations, err := ReadHistory(
+		"../../examples/cluster-version-history.jsonl",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -165,9 +166,57 @@ func TestUpgradePhaseUnknown(t *testing.T) {
 func TestAnalyzeUpgradePhasesRejectsInvalidHistory(
 	t *testing.T,
 ) {
-	_, err := analyzeUpgradePhases(nil)
+	_, err := AnalyzePhases(nil)
 
 	if err == nil {
 		t.Fatal("expected history validation error")
+	}
+}
+
+func TestPhaseRejectsContradictoryEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func([]ClusterVersionObservation)
+	}{
+		{"zero completion", func(o []ClusterVersionObservation) {
+			o[2].ClusterVersion.Status.History[0].CompletionTime = &metav1.Time{}
+		}},
+		{"completion before start", func(o []ClusterVersionObservation) {
+			o[2].ClusterVersion.Status.History[0].CompletionTime = &metav1.Time{Time: o[0].ObservedAt}
+		}},
+		{"future completion", func(o []ClusterVersionObservation) {
+			o[2].ClusterVersion.Status.History[0].CompletionTime = &metav1.Time{Time: o[2].ObservedAt.Add(time.Hour)}
+		}},
+		{"missing start", func(o []ClusterVersionObservation) { o[2].ClusterVersion.Status.History[0].StartedTime = metav1.Time{} }},
+		{"future start", func(o []ClusterVersionObservation) {
+			o[2].ClusterVersion.Status.History[0].StartedTime = metav1.Time{Time: o[2].ObservedAt.Add(time.Hour)}
+		}},
+		{"old generation", func(o []ClusterVersionObservation) {
+			o[2].ClusterVersion.Generation = 2
+			o[2].ClusterVersion.Status.ObservedGeneration = 1
+		}},
+		{"wrong history order", func(o []ClusterVersionObservation) {
+			o[2].ClusterVersion.Status.History[1].StartedTime = metav1.Time{Time: o[2].ObservedAt}
+		}},
+		{"new target", func(o []ClusterVersionObservation) {
+			o[2].ClusterVersion.Status.Desired.Version = "4.21.0"
+			o[2].ClusterVersion.Status.History[0].Version = "4.21.0"
+		}},
+		{"image mismatch", func(o []ClusterVersionObservation) { o[2].ClusterVersion.Status.Desired.Image = "different" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			observations, err := ReadHistory("../../examples/cluster-version-history.jsonl")
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.change(observations)
+			states, err := AnalyzePhases(observations)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if states[2].Phase != UpgradePhaseUnknown {
+				t.Fatalf("phase=%s", states[2].Phase)
+			}
+		})
 	}
 }

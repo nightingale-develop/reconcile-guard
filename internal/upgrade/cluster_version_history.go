@@ -1,4 +1,4 @@
-package main
+package upgrade
 
 import (
 	"bufio"
@@ -22,7 +22,7 @@ type ClusterVersionHistoryReport struct {
 	DesiredVersion string
 }
 
-func readClusterVersionHistory(
+func ReadHistory(
 	path string,
 ) ([]ClusterVersionObservation, error) {
 	file, err := os.Open(path)
@@ -74,7 +74,8 @@ func readClusterVersionHistory(
 
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf(
-			"read ClusterVersion history %q: %w",
+			"line %d: read ClusterVersion history %q: %w",
+			line+1,
 			path,
 			err,
 		)
@@ -89,7 +90,7 @@ func readClusterVersionHistory(
 	return observations, nil
 }
 
-func analyzeClusterVersionHistory(
+func AnalyzeHistory(
 	observations []ClusterVersionObservation,
 ) (ClusterVersionHistoryReport, error) {
 	if len(observations) == 0 {
@@ -108,7 +109,7 @@ func analyzeClusterVersionHistory(
 			)
 		}
 
-		if _, err := analyzeClusterVersion(
+		if _, err := AnalyzeClusterVersion(
 			observation.ClusterVersion,
 		); err != nil {
 			return ClusterVersionHistoryReport{}, fmt.Errorf(
@@ -149,15 +150,4 @@ func analyzeClusterVersionHistory(
 		last.ClusterVersion.Status.Desired.Version
 
 	return report, nil
-}
-
-func printClusterVersionHistoryReport(
-	report ClusterVersionHistoryReport,
-) {
-	fmt.Println("ClusterVersion:", report.Name)
-	fmt.Println("Observations:", report.Observations)
-	fmt.Printf(
-		"Desired version: %q\n",
-		report.DesiredVersion,
-	)
 }

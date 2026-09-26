@@ -1,4 +1,4 @@
-package main
+package upgrade
 
 import (
 	"os"
@@ -11,13 +11,13 @@ import (
 func TestAnalyzeClusterVersionHistory(t *testing.T) {
 	fresh := func() []ClusterVersionObservation {
 		t.Helper()
-		obs, err := readClusterVersionHistory("examples/cluster-version-history.jsonl")
+		obs, err := ReadHistory("../../examples/cluster-version-history.jsonl")
 		if err != nil {
 			t.Fatal(err)
 		}
 		return obs
 	}
-	got, err := analyzeClusterVersionHistory(fresh())
+	got, err := AnalyzeHistory(fresh())
 	if err != nil || got != (ClusterVersionHistoryReport{Name: "version", Observations: 3, DesiredVersion: "4.20.0"}) {
 		t.Fatalf("got %+v, %v", got, err)
 	}
@@ -57,7 +57,7 @@ func TestAnalyzeClusterVersionHistory(t *testing.T) {
 		}, "name is missing"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := analyzeClusterVersionHistory(tc.edit(fresh()))
+			_, err := AnalyzeHistory(tc.edit(fresh()))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error %v, want %q", err, tc.want)
 			}
@@ -65,11 +65,11 @@ func TestAnalyzeClusterVersionHistory(t *testing.T) {
 	}
 	obs := fresh()
 	obs[2].ClusterVersion.Status.Desired.Version = ""
-	got, err = analyzeClusterVersionHistory(obs)
+	got, err = AnalyzeHistory(obs)
 	if err != nil || got.DesiredVersion != "" {
 		t.Fatalf("must use last observation even if empty: %+v, %v", got, err)
 	}
-	got, err = analyzeClusterVersionHistory(fresh()[:1])
+	got, err = AnalyzeHistory(fresh()[:1])
 	if err != nil || got.Observations != 1 || got.DesiredVersion != "4.19.0" {
 		t.Fatalf("single observation: %+v, %v", got, err)
 	}
@@ -91,7 +91,7 @@ func TestReadClusterVersionHistory(t *testing.T) {
 			if err := os.WriteFile(path, []byte(tc.input), 0600); err != nil {
 				t.Fatal(err)
 			}
-			got, err := readClusterVersionHistory(path)
+			got, err := ReadHistory(path)
 			if tc.want != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.want) {
 					t.Fatalf("error %v, want %q", err, tc.want)
@@ -103,7 +103,7 @@ func TestReadClusterVersionHistory(t *testing.T) {
 			}
 		})
 	}
-	if _, err := readClusterVersionHistory(filepath.Join(t.TempDir(), "missing")); err == nil {
+	if _, err := ReadHistory(filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("expected read error")
 	}
 }

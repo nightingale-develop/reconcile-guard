@@ -1,7 +1,6 @@
-package main
+package upgrade
 
 import (
-	"fmt"
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -22,22 +21,36 @@ type UpgradeState struct {
 	DesiredVersion string
 }
 
-func analyzeUpgradePhases(
+func AnalyzePhases(
 	observations []ClusterVersionObservation,
 ) ([]UpgradeState, error) {
-	if _, err := analyzeClusterVersionHistory(observations); err != nil {
+	if _, err := AnalyzeHistory(observations); err != nil {
 		return nil, err
 	}
 
 	states := make([]UpgradeState, 0, len(observations))
 
-	for _, observation := range observations {
+	for i, observation := range observations {
 		phase := classifyUpgradePhase(observation.ClusterVersion)
+
+		if phase != UpgradePhaseUnknown {
+			latest := observation.ClusterVersion.Status.History[0]
+			if latest.StartedTime.Time.After(observation.ObservedAt) ||
+				(latest.CompletionTime != nil && latest.CompletionTime.Time.After(observation.ObservedAt)) {
+				phase = UpgradePhaseUnknown
+			}
+		}
 
 		if phase == UpgradePhaseStable &&
 			len(states) > 0 &&
 			states[len(states)-1].Phase == UpgradePhaseUpdating {
-			phase = UpgradePhaseCompleted
+			previous := observations[i-1].ClusterVersion.Status.Desired
+			current := observation.ClusterVersion.Status.Desired
+			if previous.Version == current.Version && previous.Image == current.Image {
+				phase = UpgradePhaseCompleted
+			} else {
+				phase = UpgradePhaseUnknown
+			}
 		}
 
 		states = append(states, UpgradeState{
@@ -53,6 +66,9 @@ func analyzeUpgradePhases(
 func classifyUpgradePhase(
 	version configv1.ClusterVersion,
 ) UpgradePhase {
+	if version.Generation != version.Status.ObservedGeneration {
+		return UpgradePhaseUnknown
+	}
 	progressing, hasProgressing := conditionStatus(
 		version.Status.Conditions,
 		configv1.OperatorProgressing,
@@ -64,6 +80,15 @@ func classifyUpgradePhase(
 
 	latest := version.Status.History[0]
 
+	if latest.StartedTime.IsZero() ||
+		(latest.CompletionTime != nil && (latest.CompletionTime.IsZero() || latest.CompletionTime.Before(&latest.StartedTime))) {
+		return UpgradePhaseUnknown
+	}
+	for i := 1; i < len(version.Status.History); i++ {
+		if version.Status.History[i].StartedTime.After(version.Status.History[i-1].StartedTime.Time) {
+			return UpgradePhaseUnknown
+		}
+	}
 	if !historyMatchesDesired(version.Status.Desired, latest) {
 		return UpgradePhaseUnknown
 	}
@@ -128,21 +153,4 @@ func historyMatchesDesired(
 	}
 
 	return compared
-}
-
-func printUpgradeTimeline(states []UpgradeState) {
-	fmt.Println("Upgrade phases:")
-
-	for _, state := range states {
-		fmt.Printf(
-			"  %s  %-9s desired=%q\n",
-			state.ObservedAt.Format(time.RFC3339Nano),
-			state.Phase,
-			state.DesiredVersion,
-		)
-	}
-
-	fmt.Println(
-		"Verdict: NOT EVALUATED (phase reconstruction only)",
-	)
 }

@@ -1,7 +1,9 @@
-package main
+package operator
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 
 	configv1 "github.com/openshift/api/config/v1"
 )
@@ -14,7 +16,7 @@ type Analysis struct {
 	ExitCode    int
 }
 
-func analyzeOperator(operator configv1.ClusterOperator) (Analysis, error) {
+func Analyze(operator configv1.ClusterOperator) (Analysis, error) {
 	if operator.APIVersion != "config.openshift.io/v1" ||
 		operator.Kind != "ClusterOperator" {
 		return Analysis{}, fmt.Errorf(
@@ -73,4 +75,16 @@ func analyzeOperator(operator configv1.ClusterOperator) (Analysis, error) {
 	}
 
 	return result, nil
+}
+
+func ReadSnapshot(path string) (configv1.ClusterOperator, error) {
+	var snapshot configv1.ClusterOperator
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return snapshot, fmt.Errorf("read file %q: %w", path, err)
+	}
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return snapshot, fmt.Errorf("decode JSON: %w", err)
+	}
+	return snapshot, nil
 }
