@@ -11,30 +11,35 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 )
 
-// ClusterVersionObservation records one ClusterVersion snapshot together with
-// the time when ReconcileGuard observed it.
 type ClusterVersionObservation struct {
 	ObservedAt     time.Time               `json:"observedAt"`
 	ClusterVersion configv1.ClusterVersion `json:"clusterVersion"`
 }
 
-// ClusterVersionHistoryReport summarizes an ordered sequence of ClusterVersion
-// observations. It does not infer an upgrade phase yet.
 type ClusterVersionHistoryReport struct {
 	Name           string
 	Observations   int
 	DesiredVersion string
 }
 
-func readClusterVersionHistory(path string) ([]ClusterVersionObservation, error) {
+func readClusterVersionHistory(
+	path string,
+) ([]ClusterVersionObservation, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open ClusterVersion history %q: %w", path, err)
+		return nil, fmt.Errorf(
+			"open ClusterVersion history %q: %w",
+			path,
+			err,
+		)
 	}
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	scanner.Buffer(
+		make([]byte, 64*1024),
+		4*1024*1024,
+	)
 
 	var observations []ClusterVersionObservation
 	line := 0
@@ -43,25 +48,42 @@ func readClusterVersionHistory(path string) ([]ClusterVersionObservation, error)
 		line++
 
 		data := bytes.TrimSpace(scanner.Bytes())
+
 		if len(data) == 0 {
 			continue
 		}
 
 		var observation ClusterVersionObservation
 
-		if err := json.Unmarshal(data, &observation); err != nil {
-			return nil, fmt.Errorf("line %d: decode JSON: %w", line, err)
+		if err := json.Unmarshal(
+			data,
+			&observation,
+		); err != nil {
+			return nil, fmt.Errorf(
+				"line %d: decode JSON: %w",
+				line,
+				err,
+			)
 		}
 
-		observations = append(observations, observation)
+		observations = append(
+			observations,
+			observation,
+		)
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("read ClusterVersion history %q: %w", path, err)
+		return nil, fmt.Errorf(
+			"read ClusterVersion history %q: %w",
+			path,
+			err,
+		)
 	}
 
 	if len(observations) == 0 {
-		return nil, fmt.Errorf("ClusterVersion history has no observations")
+		return nil, fmt.Errorf(
+			"ClusterVersion history has no observations",
+		)
 	}
 
 	return observations, nil
@@ -86,7 +108,9 @@ func analyzeClusterVersionHistory(
 			)
 		}
 
-		if _, err := analyzeClusterVersion(observation.ClusterVersion); err != nil {
+		if _, err := analyzeClusterVersion(
+			observation.ClusterVersion,
+		); err != nil {
 			return ClusterVersionHistoryReport{}, fmt.Errorf(
 				"observation %d: %w",
 				i+1,
@@ -108,7 +132,9 @@ func analyzeClusterVersionHistory(
 			)
 		}
 
-		if !observation.ObservedAt.After(observations[i-1].ObservedAt) {
+		if !observation.ObservedAt.After(
+			observations[i-1].ObservedAt,
+		) {
 			return ClusterVersionHistoryReport{}, fmt.Errorf(
 				"observation %d: observedAt must be later than the previous observation",
 				i+1,
@@ -119,14 +145,19 @@ func analyzeClusterVersionHistory(
 	last := observations[len(observations)-1]
 
 	report.Observations = len(observations)
-	report.DesiredVersion = last.ClusterVersion.Status.Desired.Version
+	report.DesiredVersion =
+		last.ClusterVersion.Status.Desired.Version
 
 	return report, nil
 }
 
-func printClusterVersionHistoryReport(report ClusterVersionHistoryReport) {
+func printClusterVersionHistoryReport(
+	report ClusterVersionHistoryReport,
+) {
 	fmt.Println("ClusterVersion:", report.Name)
 	fmt.Println("Observations:", report.Observations)
-	fmt.Printf("Desired version: %q\n", report.DesiredVersion)
-	fmt.Println("Verdict: NOT EVALUATED (ClusterVersion summary only)")
+	fmt.Printf(
+		"Desired version: %q\n",
+		report.DesiredVersion,
+	)
 }

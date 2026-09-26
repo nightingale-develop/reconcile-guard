@@ -47,13 +47,18 @@ func run() int {
 
 	case "check-version":
 		if len(os.Args) != 3 {
-			fmt.Fprintln(os.Stderr, "Usage: reconcile-guard check-version <file.json>")
+			fmt.Fprintln(
+				os.Stderr,
+				"Usage: reconcile-guard check-version <file.json>",
+			)
 			return 1
 		}
+
 		if err := checkVersionFile(os.Args[2]); err != nil {
 			fmt.Fprintln(os.Stderr, "Error:", err)
 			return 1
 		}
+
 		return 0
 
 	case "replay-version":
@@ -65,19 +70,30 @@ func run() int {
 			return 1
 		}
 
-		observations, err := readClusterVersionHistory(os.Args[2])
+		observations, err :=
+			readClusterVersionHistory(os.Args[2])
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error:", err)
 			return 1
 		}
 
-		report, err := analyzeClusterVersionHistory(observations)
+		report, err :=
+			analyzeClusterVersionHistory(observations)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			return 1
+		}
+
+		states, err :=
+			analyzeUpgradePhases(observations)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error:", err)
 			return 1
 		}
 
 		printClusterVersionHistoryReport(report)
+		printUpgradeTimeline(states)
+
 		return 0
 
 	case "replay":
@@ -105,6 +121,43 @@ func run() int {
 
 		return 0
 
+	case "verify-upgrade":
+		if len(os.Args) != 4 {
+			fmt.Fprintln(
+				os.Stderr,
+				"Usage: reconcile-guard verify-upgrade <cluster-version-history.jsonl> <operator-history.jsonl>",
+			)
+			return 1
+		}
+
+		versionObservations, err :=
+			readClusterVersionHistory(os.Args[2])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			return 1
+		}
+
+		operatorObservations, err :=
+			readHistory(os.Args[3])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			return 1
+		}
+
+		report, err :=
+			verifyNormalUpgradeOperatorConditions(
+				versionObservations,
+				operatorObservations,
+			)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			return 1
+		}
+
+		printUpgradeContractReport(report)
+
+		return contractExitCode(report.Verdict)
+
 	default:
 		fmt.Fprintln(
 			os.Stderr,
@@ -118,13 +171,23 @@ func run() int {
 func checkFile(path string) (int, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return 0, fmt.Errorf("read file %q: %w", path, err)
+		return 0, fmt.Errorf(
+			"read file %q: %w",
+			path,
+			err,
+		)
 	}
 
 	var operator configv1.ClusterOperator
 
-	if err := json.Unmarshal(data, &operator); err != nil {
-		return 0, fmt.Errorf("decode JSON: %w", err)
+	if err := json.Unmarshal(
+		data,
+		&operator,
+	); err != nil {
+		return 0, fmt.Errorf(
+			"decode JSON: %w",
+			err,
+		)
 	}
 
 	result, err := analyzeOperator(operator)
@@ -140,7 +203,8 @@ func checkFile(path string) (int, error) {
 			result.Degraded.Status,
 		)
 
-		if result.Degraded.Status == configv1.ConditionTrue {
+		if result.Degraded.Status ==
+			configv1.ConditionTrue {
 			fmt.Println(
 				"Reason:",
 				result.Degraded.Reason,
@@ -171,8 +235,12 @@ func printHistoryReport(report HistoryReport) {
 			transition.Condition,
 			transition.From,
 			transition.To,
-			transition.FromTime.Format(time.RFC3339Nano),
-			transition.ToTime.Format(time.RFC3339Nano),
+			transition.FromTime.Format(
+				time.RFC3339Nano,
+			),
+			transition.ToTime.Format(
+				time.RFC3339Nano,
+			),
 		)
 	}
 
@@ -206,9 +274,16 @@ func printUsage() {
 	fmt.Println(
 		"  check <file>  Check an OpenShift ClusterOperator",
 	)
-	fmt.Println("  check-version <file.json>  Inspect a saved OpenShift ClusterVersion")
-	fmt.Println("  replay-version <file.jsonl>  Summarize ClusterVersion observations")
+	fmt.Println(
+		"  check-version <file.json>  Inspect a saved OpenShift ClusterVersion",
+	)
+	fmt.Println(
+		"  replay-version <file.jsonl>  Reconstruct OpenShift upgrade phases",
+	)
 	fmt.Println(
 		"  replay <file.jsonl>  Show reported condition changes across snapshots",
+	)
+	fmt.Println(
+		"  verify-upgrade <cluster-version-history.jsonl> <operator-history.jsonl>  Verify operator upgrade conditions",
 	)
 }

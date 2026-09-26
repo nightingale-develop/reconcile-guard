@@ -164,7 +164,7 @@ func TestClusterVersionCLIProcess(t *testing.T) {
 		{
 			[]string{"replay-version", "examples/cluster-version-history.jsonl"},
 			0,
-			"Verdict: NOT EVALUATED (ClusterVersion summary only)",
+			"Verdict: NOT EVALUATED (phase reconstruction only)",
 		},
 		{[]string{"check-version"}, 1, "Usage:"},
 		{[]string{"replay-version"}, 1, "Usage:"},
