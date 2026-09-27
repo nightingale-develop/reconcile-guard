@@ -1,6 +1,6 @@
 # ReconcileGuard
 
-ReconcileGuard is an offline Go CLI for reproducible lifecycle analysis of OpenShift platform operators. It reads saved ClusterOperator and ClusterVersion data using official OpenShift API types, reconstructs upgrade phases, correlates observations, and checks one normal-upgrade condition contract.
+ReconcileGuard is an offline Go CLI for reproducible lifecycle analysis of OpenShift platform operators. It reads saved ClusterOperator and ClusterVersion data using official OpenShift API types, reconstructs upgrade phases, correlates observations, and checks normal-upgrade conditions and policy-defined Progressing duration.
 
 Real OpenShift compatibility has **not** been validated. All included fixtures are synthetic.
 
@@ -58,6 +58,22 @@ PASS applies to this rule and these samples only. It does not certify the entire
 
 Failure evidence includes the operator observation time, condition/status, reason/message, correlation kind and ClusterVersion interval endpoints. Preserve both input files to trace findings back to the original snapshots. The tool does not yet produce a self-contained evidence archive.
 
+## Progressing duration during upgrades
+
+```sh
+./reconcile-guard verify-progressing-upgrade examples/cluster-version-history.jsonl examples/ingress-upgrade-history.jsonl examples/progressing-policy.json
+```
+
+`operator-progressing-duration` evaluates only confidently correlated UPDATING samples. Its policy file declares `maxDuration`, `maxObservationGap` (positive Go durations), `operator`, `targetVersion`, and a `source` reference documenting both the limit and sampling assumptions. See the [illustrative project policy](examples/progressing-policy.md). No universal OpenShift threshold is assumed, and source authenticity/applicability is not independently verified.
+
+Gaps in either timeline, intervening phases, or changes of target version/image break continuity. Missing/Unknown Progressing and ambiguous correlations make an otherwise successful result INCONCLUSIVE. Missing source/operator/target applicability also prevents a verdict other than INCONCLUSIVE. Invalid input or durations are errors.
+
+Within a policy-supported run, an observed True span exceeding the limit yields FAIL. A True episode can PASS only when surrounding False samples bound its maximum span within the limit; censored/uncertain episodes are INCONCLUSIVE. A concrete FAIL overrides other evidence gaps. Evidence includes start/end observations, interval, correlation endpoints, threshold and source. This is a sampled project-policy result, not proof of uninterrupted physical state.
+
+The existing three-observation fixtures have insufficient UPDATING evidence for this duration check and return INCONCLUSIVE (exit 3). Use denser observations and your documented policy for a substantive evaluation. Exit codes are 0/2/3 for PASS/FAIL/INCONCLUSIVE and 1 for errors.
+
+The earlier `verify-progressing <operator.jsonl> <max-duration>` remains a separate operator-only sampling check; it does not perform upgrade correlation or establish a documented threshold.
+
 ## Exit codes
 
 | Code | `check` | `verify-upgrade` |
@@ -86,9 +102,9 @@ Pipeline: data → observations → validated timelines → upgrade phases → c
 
 ## Limitations and next steps
 
-There is no live collector, watch/reconnect, multi-operator analysis, automatic root-cause analysis or real OpenShift integration validation. Only one contract is implemented. Data must come from the same cluster and a comparable run; resource names alone cannot prove this. Sampling gaps and clock differences limit inference.
+There is no live collector, watch/reconnect, multi-operator analysis, automatic root-cause analysis or real OpenShift integration validation. Only normal-upgrade conditions and policy-defined Progressing duration are checked. Data must come from the same cluster and a comparable run; resource names alone cannot prove this. Sampling gaps and clock differences limit inference.
 
-Next: Progressing duration and operator version consistency contracts, multi-operator reports, stronger evidence and machine-readable output, read-only collection, watch/reconnect, real OpenShift/OKD validation and comparable-run regression analysis. kind can test Kubernetes client/watch mechanics; it does not substitute for OpenShift.
+Next: operator version consistency contracts, multi-operator reports, stronger evidence and machine-readable output, read-only collection, watch/reconnect, real OpenShift/OKD validation and comparable-run regression analysis. kind can test Kubernetes client/watch mechanics; it does not substitute for OpenShift.
 
 ## License
 

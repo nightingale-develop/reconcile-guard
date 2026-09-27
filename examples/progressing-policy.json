@@ -1,0 +1,7 @@
+{
+  "maxDuration": "10m",
+  "maxObservationGap": "2m",
+  "operator": "ingress",
+  "targetVersion": "4.20.0",
+  "source": "examples/progressing-policy.md#synthetic-example"
+}
