@@ -60,7 +60,18 @@ func (c cli) verifyClusterUpgrade(
 		return 1
 	}
 
-	c.printClusterUpgradeReport(report)
+	if c.output == outputJSON {
+		err := c.writeJSON(
+			"verify-cluster-upgrade",
+			contracts.ClusterUpgradeResult(report),
+		)
+		if err != nil {
+			fmt.Fprintln(c.stderr, "Error:", err)
+			return 1
+		}
+	} else {
+		c.printClusterUpgradeReport(report)
+	}
 
 	return contractExitCode(report.Verdict)
 }

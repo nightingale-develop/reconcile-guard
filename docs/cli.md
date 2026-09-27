@@ -15,6 +15,14 @@
 | `verify-progressing <operator.jsonl> <max-duration>` | Operator-only sampled Progressing check with a positive Go duration. |
 | `verify-progressing-upgrade <version.jsonl> <operator.jsonl> <policy.json>` | Upgrade-correlated Progressing check with an explicit project policy. |
 
+All `verify-*` commands accept the optional `--output text|json` (also
+`--output=text|json`). Text is the default. JSON output is a document with
+`schemaVersion`, `command` and `result` fields; the result contains the overall
+verdict, per-operator contracts, contract details and any available evidence.
+See the [JSON output reference](json-output.md) for the schema and evidence
+fields. The current schema version is `1`. The option is rejected for `check`,
+`replay`, `check-version` and `replay-version`, and it may be supplied only once.
+
 ## Input format
 
 JSONL records contain `observedAt` and either `operator` or `clusterVersion`. Each file must describe one resource with strictly increasing, nonzero timestamps. Blank lines are ignored; malformed JSON and oversized lines report their physical line number. Readers allow lines smaller than 4 MiB. Unknown JSON fields are ignored; this is not full API-schema validation.
@@ -48,4 +56,4 @@ All fixtures are synthetic. The version and multi-operator examples return PASS 
 | 2 | Degraded=True | FAIL |
 | 3 | Degraded=Unknown or missing | INCONCLUSIVE |
 
-`check-version`, `replay` and `replay-version` return 0 for successful processing and 1 for errors; they do not return contract verdicts. Diagnostics go to stdout, errors to stderr.
+`check-version`, `replay` and `replay-version` return 0 for successful processing and 1 for errors; they do not return contract verdicts. Diagnostics go to stdout, errors to stderr. JSON encoding failures are reported as input/usage-style errors with exit code 1.

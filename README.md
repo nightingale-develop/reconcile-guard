@@ -23,9 +23,15 @@ go build -o reconcile-guard ./cmd/reconcile-guard
   examples/cluster-version-history.jsonl \
   examples/ingress-version-history.jsonl \
   examples/network-version-history.jsonl
+
+# Emit a machine-readable report instead of text
+./reconcile-guard verify-upgrade \
+  examples/cluster-version-history.jsonl \
+  examples/ingress-upgrade-history.jsonl \
+  --output json
 ```
 
-This synthetic example returns `Aggregate verdict: PASS` for two operators, with exit code `0`.
+The cluster example returns `Aggregate verdict: PASS` for two operators; the JSON example reports PASS for ingress. Both synthetic examples exit with code `0`.
 
 ## Interpreting results
 
@@ -36,13 +42,14 @@ Snapshot and replay commands have [their own exit-code semantics](docs/cli.md#ex
 ## Documentation
 
 - [CLI reference](docs/cli.md) — all commands, input format, examples and exit codes.
+- [JSON output](docs/json-output.md) — schema, evidence fields and machine-readable reports.
 - [Contracts and interpretation](docs/contracts.md) — phases, correlation, evidence requirements and verdict rules.
 - [Development](docs/development.md) — package layout, tests, limitations and next steps.
 - [Example Progressing policy](examples/progressing-policy.md) — illustrative limits and sampling assumptions.
 
 ## Current limits
 
-There is no live collector, watch/reconnect, automatic root-cause diagnosis or machine-readable report. Inputs must come from the same cluster and a comparable run; the CLI cannot establish that provenance. Gaps between snapshots limit what can be concluded.
+There is no live collector, watch/reconnect or automatic root-cause diagnosis. Verification commands can emit a versioned machine-readable JSON report, but inputs must come from the same cluster and a comparable run; the CLI cannot establish that provenance. Gaps between snapshots limit what can be concluded.
 
 ## License
 

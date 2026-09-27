@@ -76,5 +76,12 @@ The report covers only the operator histories supplied to the command. A PASS do
 
 The policy-based Progressing duration contract is not included because its threshold and applicability are supplied separately per operator.
 
+The verification commands support `--output json` for machine-readable reports.
+The output uses schema version `1` and includes the command name, aggregate
+verdict, per-operator contract results, counts/values/flags and evidence fields
+when the contract produces them. The JSON report represents the same selected
+checks as text output; it does not add observations or establish evidence that
+the input snapshots do not contain.
 
-At least one operator history is required; duplicate operator names are input errors. The CLI prints counts and per-operator verdicts. Detailed findings remain in the in-memory report; use the individual verification commands for their text evidence. No JSON output or self-contained evidence archive is implemented.
+
+At least one operator history is required; duplicate operator names are input errors. The CLI prints counts and per-operator verdicts in text mode, and exposes the corresponding contract details and evidence in JSON mode. The JSON document is not a self-contained evidence archive: preserve the ClusterVersion history and all supplied operator histories to trace findings back to the original snapshots.

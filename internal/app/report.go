@@ -110,6 +110,9 @@ func (c cli) printUsage() {
 	fmt.Fprintln(c.stdout,
 		"  verify-cluster-upgrade <version.jsonl> <operator.jsonl>...  Verify multiple operators and print an aggregate upgrade report",
 	)
+	fmt.Fprintln(c.stdout,
+		"  Verification commands support --output text|json",
+	)
 }
 
 func (c cli) printVersionReport(report upgrade.ClusterVersionReport) {

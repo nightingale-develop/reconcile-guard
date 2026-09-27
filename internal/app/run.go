@@ -11,10 +11,28 @@ import (
 )
 
 func (c cli) run(args []string) int {
+	args, format, outputSpecified, err :=
+		parseOutputOption(args)
+	if err != nil {
+		fmt.Fprintln(c.stderr, "Error:", err)
+		return 1
+	}
+
 	if len(args) == 0 {
 		c.printUsage()
 		return 0
 	}
+
+	if outputSpecified &&
+		!isVerificationCommand(args[0]) {
+		fmt.Fprintln(
+			c.stderr,
+			"Error: --output is supported only by verify commands",
+		)
+		return 1
+	}
+
+	c.output = format
 
 	switch args[0] {
 	case "version":
@@ -147,7 +165,20 @@ func (c cli) run(args []string) int {
 			fmt.Fprintln(c.stderr, "Error:", err)
 			return 1
 		}
-		c.printProgressingReport(report)
+		if c.output == outputJSON {
+			err := c.writeSingleContractJSON(
+				"verify-progressing",
+				report.Operator,
+				contracts.ProgressingResult(report),
+			)
+			if err != nil {
+				fmt.Fprintln(c.stderr, "Error:", err)
+				return 1
+			}
+		} else {
+			c.printProgressingReport(report)
+		}
+
 		return contractExitCode(report.Verdict)
 
 	case "verify-upgrade":
@@ -183,7 +214,19 @@ func (c cli) run(args []string) int {
 			return 1
 		}
 
-		c.printUpgradeContractReport(report)
+		if c.output == outputJSON {
+			err := c.writeSingleContractJSON(
+				"verify-upgrade",
+				report.Operator,
+				contracts.NormalUpgradeResult(report),
+			)
+			if err != nil {
+				fmt.Fprintln(c.stderr, "Error:", err)
+				return 1
+			}
+		} else {
+			c.printUpgradeContractReport(report)
+		}
 
 		return contractExitCode(report.Verdict)
 
@@ -243,6 +286,7 @@ func contractExitCode(verdict contracts.ContractVerdict) int {
 type cli struct {
 	stdout io.Writer
 	stderr io.Writer
+	output outputFormat
 }
 
 func Run(args []string, stdout, stderr io.Writer) int {

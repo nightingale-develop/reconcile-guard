@@ -38,7 +38,20 @@ func (c cli) verifyUpgradeProgressing(args []string) int {
 		fmt.Fprintln(c.stderr, "Error:", err)
 		return 1
 	}
-	c.printUpgradeProgressing(report)
+	if c.output == outputJSON {
+		err := c.writeSingleContractJSON(
+			"verify-progressing-upgrade",
+			report.Operator,
+			contracts.ProgressingUpgradeResult(report),
+		)
+		if err != nil {
+			fmt.Fprintln(c.stderr, "Error:", err)
+			return 1
+		}
+	} else {
+		c.printUpgradeProgressing(report)
+	}
+
 	return contractExitCode(report.Verdict)
 }
 

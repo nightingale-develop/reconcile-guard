@@ -6,15 +6,16 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 
 	"github.com/nightingale-develop/reconcile-guard/internal/operator"
+	"github.com/nightingale-develop/reconcile-guard/internal/result"
 	"github.com/nightingale-develop/reconcile-guard/internal/upgrade"
 )
 
-type ContractVerdict string
+type ContractVerdict = result.Verdict
 
 const (
-	ContractPass         ContractVerdict = "PASS"
-	ContractFail         ContractVerdict = "FAIL"
-	ContractInconclusive ContractVerdict = "INCONCLUSIVE"
+	ContractPass         = result.VerdictPass
+	ContractFail         = result.VerdictFail
+	ContractInconclusive = result.VerdictInconclusive
 )
 
 const normalUpgradeConditionsContract = "normal-upgrade-operator-conditions"

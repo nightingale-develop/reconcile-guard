@@ -40,7 +40,19 @@ func (c cli) verifyUpgradeVersion(args []string) int {
 		return 1
 	}
 
-	c.printVersionConsistencyReport(report)
+	if c.output == outputJSON {
+		err := c.writeSingleContractJSON(
+			"verify-version-upgrade",
+			report.Operator,
+			contracts.VersionConsistencyResult(report),
+		)
+		if err != nil {
+			fmt.Fprintln(c.stderr, "Error:", err)
+			return 1
+		}
+	} else {
+		c.printVersionConsistencyReport(report)
+	}
 
 	return contractExitCode(report.Verdict)
 }

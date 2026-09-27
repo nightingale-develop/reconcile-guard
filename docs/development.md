@@ -31,6 +31,6 @@ Pipeline: data → observations → validated timelines → upgrade phases → c
 
 ## Limitations and next steps
 
-There is no live collector, watch/reconnect, automatic root-cause analysis or real OpenShift integration validation. Implemented contracts cover normal-upgrade conditions, policy-defined Progressing duration and post-completion operator version consistency. Multi-operator reports aggregate conditions and version checks for the supplied histories only. Data must come from the same cluster and a comparable run; resource names alone cannot prove this. Sampling gaps and clock differences limit inference.
+There is no live collector, watch/reconnect, automatic root-cause analysis or real OpenShift integration validation. Implemented contracts cover normal-upgrade conditions, policy-defined Progressing duration and post-completion operator version consistency. Verification commands provide text output by default and an opt-in schema-versioned JSON report with contract details and evidence. Multi-operator reports aggregate conditions and version checks for the supplied histories only. Data must come from the same cluster and a comparable run; resource names alone cannot prove this. Sampling gaps and clock differences limit inference.
 
-Next: stronger evidence and machine-readable output, read-only collection, watch/reconnect, real OpenShift/OKD validation and comparable-run regression analysis. kind can test Kubernetes client/watch mechanics; it does not substitute for OpenShift.
+Next: stronger evidence, read-only collection, watch/reconnect, real OpenShift/OKD validation and comparable-run regression analysis. kind can test Kubernetes client/watch mechanics; it does not substitute for OpenShift.
