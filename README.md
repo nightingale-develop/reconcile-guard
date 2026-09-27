@@ -17,6 +17,9 @@ go build -o reconcile-guard ./cmd/reconcile-guard
 ./reconcile-guard check-version examples/cluster-version.json
 ./reconcile-guard replay-version examples/cluster-version-history.jsonl
 ./reconcile-guard verify-upgrade examples/cluster-version-history.jsonl examples/ingress-upgrade-history.jsonl
+./reconcile-guard verify-version-upgrade \
+  examples/cluster-version-history.jsonl \
+  examples/ingress-version-history.jsonl
 ```
 
 | Command | Result |
@@ -26,6 +29,7 @@ go build -o reconcile-guard ./cmd/reconcile-guard
 | `check-version <file.json>` | Inspect ClusterVersion status.desired, conditions and update history. |
 | `replay-version <file.jsonl>` | Validate the history and reconstruct analytical upgrade phases. |
 | `verify-upgrade <version.jsonl> <operator.jsonl>` | Correlate both timelines and evaluate the normal-upgrade condition contract for one operator. |
+| `verify-version-upgrade <version.jsonl> <operator.jsonl>` | Verify that the ClusterOperator reports the completed OpenShift target version after upgrade completion. |
 
 JSONL records contain `observedAt` and either `operator` or `clusterVersion`. Each file must describe one resource with strictly increasing, nonzero timestamps. Blank lines are ignored; malformed JSON and oversized lines report their physical line number. Readers allow lines smaller than 4 MiB. Unknown JSON fields are ignored; this is not full API-schema validation.
 
@@ -73,6 +77,16 @@ Within a policy-supported run, an observed True span exceeding the limit yields 
 The existing three-observation fixtures have insufficient UPDATING evidence for this duration check and return INCONCLUSIVE (exit 3). Use denser observations and your documented policy for a substantive evaluation. Exit codes are 0/2/3 for PASS/FAIL/INCONCLUSIVE and 1 for errors.
 
 The earlier `verify-progressing <operator.jsonl> <max-duration>` remains a separate operator-only sampling check; it does not perform upgrade correlation or establish a documented threshold.
+
+## Operator version consistency
+
+`operator-version-consistency` checks `status.versions[name=operator]` only after a target release has been observed as completed.
+
+During an upgrade, an operator may continue reporting its previous version while old operands are still present. ReconcileGuard therefore does not treat a version mismatch during UPDATING as a failure.
+
+After upgrade completion, the reported operator version must match the completed ClusterVersion target. Missing version evidence or missing post-completion observations produce INCONCLUSIVE. A concrete mismatch produces FAIL.
+
+The check evaluates only observed post-completion windows. It does not prove state outside the supplied observations.
 
 ## Exit codes
 
