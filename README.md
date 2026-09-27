@@ -1,157 +1,48 @@
 # ReconcileGuard
 
-ReconcileGuard is an offline Go CLI for reproducible lifecycle analysis of OpenShift platform operators. It reads saved ClusterOperator and ClusterVersion data using official OpenShift API types, reconstructs upgrade phases, correlates observations, and checks normal-upgrade conditions and policy-defined Progressing duration.
+An offline Go CLI for reproducible lifecycle analysis of OpenShift platform operators. ReconcileGuard reads saved ClusterOperator and ClusterVersion observations, reconstructs upgrade phases and checks explicit behavior rules against the supplied evidence.
 
-Real OpenShift compatibility has **not** been validated. All included fixtures are synthetic.
+**Early prototype:** all included fixtures are synthetic; compatibility with a real OpenShift cluster has not been validated.
 
-## Build and use
+## What it does
 
-Requires Go 1.27.1 or later.
+- Inspects snapshots and replays reported condition changes.
+- Checks Available and Degraded conditions during observed upgrades.
+- Checks Progressing duration against an explicit project policy.
+- Compares reported operator versions with completed upgrade targets.
+- Combines condition and version checks into a report for multiple supplied operators.
+
+## Quick start
+
+Requires **Go 1.27.1 or later**. Run from the repository root:
 
 ```sh
 go build -o reconcile-guard ./cmd/reconcile-guard
 ./reconcile-guard help
-./reconcile-guard version
-./reconcile-guard check examples/ingress-ok.json
-./reconcile-guard replay examples/ingress-history.jsonl
-./reconcile-guard check-version examples/cluster-version.json
-./reconcile-guard replay-version examples/cluster-version-history.jsonl
-./reconcile-guard verify-upgrade examples/cluster-version-history.jsonl examples/ingress-upgrade-history.jsonl
-./reconcile-guard verify-version-upgrade \
+./reconcile-guard verify-cluster-upgrade \
   examples/cluster-version-history.jsonl \
-  examples/ingress-version-history.jsonl
+  examples/ingress-version-history.jsonl \
+  examples/network-version-history.jsonl
 ```
 
-| Command | Result |
-| --- | --- |
-| `check <file>` | Report the snapshot's Degraded condition. False does not establish overall health. |
-| `replay <file.jsonl>` | Report changes in Available, Progressing and Degraded between adjacent observations. Missing conditions are counted as uncompared pairs, never bridged. |
-| `check-version <file.json>` | Inspect ClusterVersion status.desired, conditions and update history. |
-| `replay-version <file.jsonl>` | Validate the history and reconstruct analytical upgrade phases. |
-| `verify-upgrade <version.jsonl> <operator.jsonl>` | Correlate both timelines and evaluate the normal-upgrade condition contract for one operator. |
-| `verify-version-upgrade <version.jsonl> <operator.jsonl>` | Verify that the ClusterOperator reports the completed OpenShift target version after upgrade completion. |
-| `verify-cluster-upgrade <version.jsonl> <operator.jsonl>...` | Run upgrade contracts for multiple supplied ClusterOperators and produce an aggregate report. |
+This synthetic example returns `Aggregate verdict: PASS` for two operators, with exit code `0`.
 
-JSONL records contain `observedAt` and either `operator` or `clusterVersion`. Each file must describe one resource with strictly increasing, nonzero timestamps. Blank lines are ignored; malformed JSON and oversized lines report their physical line number. Readers allow lines smaller than 4 MiB. Unknown JSON fields are ignored; this is not full API-schema validation.
+## Interpreting results
 
-`observedAt` is the snapshot capture time. OpenShift's `lastTransitionTime` is a separate reported timestamp. Transitions retain the interval between adjacent observations, not an invented exact event time.
+Verification commands return `0` for PASS, `2` for FAIL, `3` for INCONCLUSIVE and `1` for input or usage errors. PASS applies only to the selected checks and supplied observations; it does not certify the whole upgrade or every operator in the cluster. The aggregate report includes condition and version checks; Progressing duration is evaluated separately.
 
-## Upgrade phases and correlation
+Snapshot and replay commands have [their own exit-code semantics](docs/cli.md#exit-codes). In particular, `Degraded=False` does not establish overall health, and successful replay only means the data was processed.
 
-STABLE, UPDATING, COMPLETED and UNKNOWN are ReconcileGuard analytical states, not OpenShift condition names. Reconstruction uses Progressing, Available, status.desired and the newest update-history entry. Missing or contradictory evidence produces UNKNOWN. COMPLETED marks an observed UPDATING-to-STABLE transition for the same target release; a later stable observation is STABLE again.
+## Documentation
 
-Operator observations are correlated with the validated ClusterVersion timeline:
+- [CLI reference](docs/cli.md) — all commands, input format, examples and exit codes.
+- [Contracts and interpretation](docs/contracts.md) — phases, correlation, evidence requirements and verdict rules.
+- [Development](docs/development.md) — package layout, tests, limitations and next steps.
+- [Example Progressing policy](examples/progressing-policy.md) — illustrative limits and sampling assumptions.
 
-| Kind | Meaning |
-| --- | --- |
-| EXACT | Same observedAt as a ClusterVersion state; its phase may still be UNKNOWN. |
-| BRACKETED | Between two observations with the same known phase. |
-| AMBIGUOUS | Between different phases or an UNKNOWN endpoint. No phase is guessed. |
-| OUTSIDE | Before or after the known timeline, or no states available. |
+## Current limits
 
-BRACKETED is an inference from matching endpoints, not proof that no unobserved change occurred between samples.
-
-## First contract and verdicts
-
-`normal-upgrade-operator-conditions` checks Available=True and Degraded=False only for samples correlated to UPDATING. The underlying normal-upgrade expectation is documented in the pinned [OpenShift condition definitions](https://github.com/openshift/api/blob/9abfa327cff2/config/v1/types_cluster_operator.go). Phase reconstruction also uses the pinned [ClusterVersion definitions](https://github.com/openshift/api/blob/9abfa327cff2/config/v1/types_cluster_version.go).
-
-- **FAIL**: an evaluated observation reports Available=False or Degraded=True. A concrete failure takes precedence over incomplete evidence elsewhere.
-- **INCONCLUSIVE**: no UPDATING samples, missing/Unknown required conditions, or ambiguous/outside/unknown-phase operator samples prevent a complete assessment of the supplied observations.
-- **PASS**: at least one UPDATING sample was evaluated, all required conditions satisfy the contract, and no evidence gaps above remain.
-
-PASS applies to this rule and these samples only. It does not certify the entire upgrade or unsampled intervals. The tool cannot establish that the environment met the assumptions of a normal upgrade, or determine whether an infrastructure incident caused a failure.
-
-Failure evidence includes the operator observation time, condition/status, reason/message, correlation kind and ClusterVersion interval endpoints. Preserve both input files to trace findings back to the original snapshots. The tool does not yet produce a self-contained evidence archive.
-
-## Progressing duration during upgrades
-
-```sh
-./reconcile-guard verify-progressing-upgrade examples/cluster-version-history.jsonl examples/ingress-upgrade-history.jsonl examples/progressing-policy.json
-```
-
-`operator-progressing-duration` evaluates only confidently correlated UPDATING samples. Its policy file declares `maxDuration`, `maxObservationGap` (positive Go durations), `operator`, `targetVersion`, and a `source` reference documenting both the limit and sampling assumptions. See the [illustrative project policy](examples/progressing-policy.md). No universal OpenShift threshold is assumed, and source authenticity/applicability is not independently verified.
-
-Gaps in either timeline, intervening phases, or changes of target version/image break continuity. Missing/Unknown Progressing and ambiguous correlations make an otherwise successful result INCONCLUSIVE. Missing source/operator/target applicability also prevents a verdict other than INCONCLUSIVE. Invalid input or durations are errors.
-
-Within a policy-supported run, an observed True span exceeding the limit yields FAIL. A True episode can PASS only when surrounding False samples bound its maximum span within the limit; censored/uncertain episodes are INCONCLUSIVE. A concrete FAIL overrides other evidence gaps. Evidence includes start/end observations, interval, correlation endpoints, threshold and source. This is a sampled project-policy result, not proof of uninterrupted physical state.
-
-The existing three-observation fixtures have insufficient UPDATING evidence for this duration check and return INCONCLUSIVE (exit 3). Use denser observations and your documented policy for a substantive evaluation. Exit codes are 0/2/3 for PASS/FAIL/INCONCLUSIVE and 1 for errors.
-
-The earlier `verify-progressing <operator.jsonl> <max-duration>` remains a separate operator-only sampling check; it does not perform upgrade correlation or establish a documented threshold.
-
-## Operator version consistency
-
-`operator-version-consistency` checks `status.versions[name=operator]` only after a target release has been observed as completed.
-
-During an upgrade, an operator may continue reporting its previous version while old operands are still present. ReconcileGuard therefore does not treat a version mismatch during UPDATING as a failure.
-
-After upgrade completion, the reported operator version must match the completed ClusterVersion target. Missing version evidence or missing post-completion observations produce INCONCLUSIVE. A concrete mismatch produces FAIL.
-
-The check evaluates only observed post-completion windows. It does not prove state outside the supplied observations.
-
-## Multi-operator upgrade report
-
-`verify-cluster-upgrade` evaluates multiple saved ClusterOperator histories against the same ClusterVersion timeline.
-
-For each supplied operator it currently evaluates:
-
-- `normal-upgrade-operator-conditions`
-- `operator-version-consistency`
-
-The aggregate verdict uses fail-first precedence:
-
-- `FAIL` if at least one supplied operator fails;
-- otherwise `INCONCLUSIVE` if at least one supplied operator is inconclusive;
-- otherwise `PASS`.
-
-The report covers only the operator histories supplied to the command. A PASS does not prove that every ClusterOperator in the cluster was evaluated.
-
-The policy-based Progressing duration contract is not included because its threshold and applicability are supplied separately per operator.
-
-## Exit codes
-
-| Code | `check` | `verify-upgrade` |
-| --- | --- | --- |
-| 0 | Degraded=False | PASS |
-| 1 | Input/usage error | Input/usage error |
-| 2 | Degraded=True | FAIL |
-| 3 | Degraded=Unknown or missing | INCONCLUSIVE |
-
-`check-version`, `replay` and `replay-version` return 0 for successful processing and 1 for errors; they do not return contract verdicts. Diagnostics go to stdout, errors to stderr.
-
-## Development
-
-```sh
-gofmt -w .
-go mod tidy
-go test -count=1 ./...
-go test -race -count=1 ./...
-go vet ./...
-go build -o reconcile-guard ./cmd/reconcile-guard
-```
-
-The race detector requires a supported platform and working C toolchain.
-
-### Project layout
-
-| Path | Responsibility |
-| --- | --- |
-| `cmd/reconcile-guard/` | Executable entry point; delegates to `internal/app`. |
-| `internal/app/` | CLI commands, input loading, report formatting and exit codes. |
-| `internal/operator/` | ClusterOperator snapshot and JSONL readers, observation validation and condition transitions. |
-| `internal/upgrade/` | ClusterVersion snapshot and JSONL readers, timeline validation and upgrade phase reconstruction. |
-| `internal/contracts/` | Timeline correlation, contract evaluation and aggregate verdicts. |
-| `examples/` | Synthetic input fixtures and an illustrative Progressing policy. |
-
-Tests live alongside the code in `*_test.go` files. Keep command handling in `app` and reusable analysis in the domain packages. `contracts` uses `operator` and `upgrade`; those packages do not depend on the CLI. Shared runnable examples stay in `examples/`; future fixtures used only by one package's tests belong in that package's `testdata/` directory.
-
-Pipeline: data → observations → validated timelines → upgrade phases → correlation → contract checks → evidence report. Computation accepts typed observations and is independent of JSONL readers or a future collector.
-
-## Limitations and next steps
-
-There is no live collector, watch/reconnect, automatic root-cause analysis or real OpenShift integration validation. Implemented contracts cover normal-upgrade conditions, policy-defined Progressing duration and post-completion operator version consistency. Multi-operator reports aggregate conditions and version checks for the supplied histories only. Data must come from the same cluster and a comparable run; resource names alone cannot prove this. Sampling gaps and clock differences limit inference.
-
-Next: stronger evidence and machine-readable output, read-only collection, watch/reconnect, real OpenShift/OKD validation and comparable-run regression analysis. kind can test Kubernetes client/watch mechanics; it does not substitute for OpenShift.
+There is no live collector, watch/reconnect, automatic root-cause diagnosis or machine-readable report. Inputs must come from the same cluster and a comparable run; the CLI cannot establish that provenance. Gaps between snapshots limit what can be concluded.
 
 ## License
 
