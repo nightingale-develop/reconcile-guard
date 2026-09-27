@@ -30,6 +30,7 @@ go build -o reconcile-guard ./cmd/reconcile-guard
 | `replay-version <file.jsonl>` | Validate the history and reconstruct analytical upgrade phases. |
 | `verify-upgrade <version.jsonl> <operator.jsonl>` | Correlate both timelines and evaluate the normal-upgrade condition contract for one operator. |
 | `verify-version-upgrade <version.jsonl> <operator.jsonl>` | Verify that the ClusterOperator reports the completed OpenShift target version after upgrade completion. |
+| `verify-cluster-upgrade <version.jsonl> <operator.jsonl>...` | Run upgrade contracts for multiple supplied ClusterOperators and produce an aggregate report. |
 
 JSONL records contain `observedAt` and either `operator` or `clusterVersion`. Each file must describe one resource with strictly increasing, nonzero timestamps. Blank lines are ignored; malformed JSON and oversized lines report their physical line number. Readers allow lines smaller than 4 MiB. Unknown JSON fields are ignored; this is not full API-schema validation.
 
@@ -88,6 +89,25 @@ After upgrade completion, the reported operator version must match the completed
 
 The check evaluates only observed post-completion windows. It does not prove state outside the supplied observations.
 
+## Multi-operator upgrade report
+
+`verify-cluster-upgrade` evaluates multiple saved ClusterOperator histories against the same ClusterVersion timeline.
+
+For each supplied operator it currently evaluates:
+
+- `normal-upgrade-operator-conditions`
+- `operator-version-consistency`
+
+The aggregate verdict uses fail-first precedence:
+
+- `FAIL` if at least one supplied operator fails;
+- otherwise `INCONCLUSIVE` if at least one supplied operator is inconclusive;
+- otherwise `PASS`.
+
+The report covers only the operator histories supplied to the command. A PASS does not prove that every ClusterOperator in the cluster was evaluated.
+
+The policy-based Progressing duration contract is not included because its threshold and applicability are supplied separately per operator.
+
 ## Exit codes
 
 | Code | `check` | `verify-upgrade` |
@@ -110,15 +130,28 @@ go vet ./...
 go build -o reconcile-guard ./cmd/reconcile-guard
 ```
 
-The race detector requires a supported platform and working C toolchain. Domain code lives in `internal/operator`, `internal/upgrade` and `internal/contracts`; `internal/app` handles arguments, output and exit codes. The entry point is `cmd/reconcile-guard`.
+The race detector requires a supported platform and working C toolchain.
+
+### Project layout
+
+| Path | Responsibility |
+| --- | --- |
+| `cmd/reconcile-guard/` | Executable entry point; delegates to `internal/app`. |
+| `internal/app/` | CLI commands, input loading, report formatting and exit codes. |
+| `internal/operator/` | ClusterOperator snapshot and JSONL readers, observation validation and condition transitions. |
+| `internal/upgrade/` | ClusterVersion snapshot and JSONL readers, timeline validation and upgrade phase reconstruction. |
+| `internal/contracts/` | Timeline correlation, contract evaluation and aggregate verdicts. |
+| `examples/` | Synthetic input fixtures and an illustrative Progressing policy. |
+
+Tests live alongside the code in `*_test.go` files. Keep command handling in `app` and reusable analysis in the domain packages. `contracts` uses `operator` and `upgrade`; those packages do not depend on the CLI. Shared runnable examples stay in `examples/`; future fixtures used only by one package's tests belong in that package's `testdata/` directory.
 
 Pipeline: data → observations → validated timelines → upgrade phases → correlation → contract checks → evidence report. Computation accepts typed observations and is independent of JSONL readers or a future collector.
 
 ## Limitations and next steps
 
-There is no live collector, watch/reconnect, multi-operator analysis, automatic root-cause analysis or real OpenShift integration validation. Only normal-upgrade conditions and policy-defined Progressing duration are checked. Data must come from the same cluster and a comparable run; resource names alone cannot prove this. Sampling gaps and clock differences limit inference.
+There is no live collector, watch/reconnect, automatic root-cause analysis or real OpenShift integration validation. Implemented contracts cover normal-upgrade conditions, policy-defined Progressing duration and post-completion operator version consistency. Multi-operator reports aggregate conditions and version checks for the supplied histories only. Data must come from the same cluster and a comparable run; resource names alone cannot prove this. Sampling gaps and clock differences limit inference.
 
-Next: operator version consistency contracts, multi-operator reports, stronger evidence and machine-readable output, read-only collection, watch/reconnect, real OpenShift/OKD validation and comparable-run regression analysis. kind can test Kubernetes client/watch mechanics; it does not substitute for OpenShift.
+Next: stronger evidence and machine-readable output, read-only collection, watch/reconnect, real OpenShift/OKD validation and comparable-run regression analysis. kind can test Kubernetes client/watch mechanics; it does not substitute for OpenShift.
 
 ## License
 

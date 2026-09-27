@@ -107,6 +107,9 @@ func (c cli) printUsage() {
 	fmt.Fprintln(c.stdout,
 		"  verify-version-upgrade <version.jsonl> <operator.jsonl>  Check operator version after upgrade completion",
 	)
+	fmt.Fprintln(c.stdout,
+		"  verify-cluster-upgrade <version.jsonl> <operator.jsonl>...  Verify multiple operators and print an aggregate upgrade report",
+	)
 }
 
 func (c cli) printVersionReport(report upgrade.ClusterVersionReport) {

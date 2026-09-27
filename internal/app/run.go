@@ -124,6 +124,9 @@ func (c cli) run(args []string) int {
 	case "verify-version-upgrade":
 		return c.verifyUpgradeVersion(args)
 
+	case "verify-cluster-upgrade":
+		return c.verifyClusterUpgrade(args)
+
 	case "verify-progressing":
 		if len(args) != 3 {
 			fmt.Fprintln(c.stderr, "Usage: reconcile-guard verify-progressing <operator-history.jsonl> <max-duration>")
