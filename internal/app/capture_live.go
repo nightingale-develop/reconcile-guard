@@ -7,8 +7,6 @@ import (
 
 	"github.com/nightingale-develop/reconcile-guard/internal/collector"
 	"github.com/nightingale-develop/reconcile-guard/internal/recording"
-
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 type captureLiveOptions struct {
@@ -23,27 +21,9 @@ func (c cli) captureLive(args []string) int {
 		return 1
 	}
 
-	loadingRules :=
-		clientcmd.NewDefaultClientConfigLoadingRules()
-
-	if options.kubeconfig != "" {
-		loadingRules.ExplicitPath =
-			options.kubeconfig
-	}
-
-	clientConfig :=
-		clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-			loadingRules,
-			&clientcmd.ConfigOverrides{},
-		)
-
-	config, err := clientConfig.ClientConfig()
+	config, err := loadLiveConfig(options.kubeconfig)
 	if err != nil {
-		fmt.Fprintln(
-			c.stderr,
-			"Error: load kubeconfig:",
-			err,
-		)
+		fmt.Fprintln(c.stderr, "Error:", err)
 		return 1
 	}
 

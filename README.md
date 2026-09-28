@@ -1,8 +1,8 @@
 # ReconcileGuard
 
-An offline Go CLI for reproducible lifecycle analysis of OpenShift platform operators. ReconcileGuard reads saved ClusterOperator and ClusterVersion observations, reconstructs upgrade phases and checks explicit behavior rules against the supplied evidence.
+An offline Go CLI for reproducible lifecycle analysis of OpenShift platform operators, with read-only live capture and recording. ReconcileGuard reads saved ClusterOperator and ClusterVersion observations, reconstructs upgrade phases and checks explicit behavior rules against supplied evidence.
 
-**Early prototype:** all included fixtures are synthetic; Live read-only capture has been validated against a real OpenShift cluster. Upgrade contract behavior has not yet been validated during a real cluster upgrade.
+**Early prototype:** all included fixtures are synthetic. Live read-only recording is available; a prior user-reported capture succeeded against a real OpenShift cluster, but this is historical evidence rather than a validation run here. Upgrade contract behavior has not yet been validated during a real cluster upgrade.
 
 ## What it does
 
@@ -29,6 +29,9 @@ go build -o reconcile-guard ./cmd/reconcile-guard
   examples/cluster-version-history.jsonl \
   examples/ingress-upgrade-history.jsonl \
   --output json
+
+# Record live JSONL observations (requires OpenShift LIST/WATCH access)
+./reconcile-guard record-live ./live-recording
 ```
 
 The cluster example returns `Aggregate verdict: PASS` for two operators; the JSON example reports PASS for ingress. Both synthetic examples exit with code `0`. This is the offline MVP; real OpenShift validation remains future work.
@@ -49,7 +52,9 @@ Snapshot and replay commands have [their own exit-code semantics](docs/cli.md#ex
 
 ## Current limits
 
-There is no live collector, watch/reconnect or automatic root-cause diagnosis. Verification commands can emit a versioned machine-readable JSON report, but inputs must come from the same cluster and a comparable run; the CLI cannot establish that provenance. Gaps between snapshots limit what can be concluded.
+Live recording now writes read-only ClusterVersion and ClusterOperator JSONL streams. Verification remains offline, and there is no automatic root-cause diagnosis. Client-go handles ordinary LIST/WATCH renewal and resourceVersion recovery; real disconnect and expired-resourceVersion behavior on OpenShift remain unvalidated. Gaps between snapshots limit what can be concluded.
+
+Inputs must come from the same cluster and a comparable run; the CLI cannot establish that provenance. Reports cover only the supplied histories.
 
 ## License
 

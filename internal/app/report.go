@@ -117,6 +117,10 @@ func (c cli) printUsage() {
 	fmt.Fprintln(c.stdout,
 		"  capture-live <directory> [--kubeconfig <path>]  Capture one live OpenShift observation",
 	)
+
+	fmt.Fprintln(c.stdout,
+		"  record-live <directory> [--kubeconfig <path>]  Continuously record OpenShift changes",
+	)
 }
 
 func (c cli) printVersionReport(report upgrade.ClusterVersionReport) {

@@ -2,17 +2,31 @@ package recording
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/nightingale-develop/reconcile-guard/internal/collector"
+	"github.com/nightingale-develop/reconcile-guard/internal/operator"
+	"github.com/nightingale-develop/reconcile-guard/internal/upgrade"
 )
 
-func AppendCapture(
+type JSONLRecorder struct {
+	directory string
+	mu        sync.Mutex
+}
+
+func NewJSONLRecorder(
 	directory string,
-	capture collector.Capture,
-) error {
+) (*JSONLRecorder, error) {
+	if directory == "" {
+		return nil, fmt.Errorf(
+			"output directory is required",
+		)
+	}
+
 	operatorDirectory :=
 		filepath.Join(directory, "operators")
 
@@ -20,20 +34,31 @@ func AppendCapture(
 		operatorDirectory,
 		0755,
 	); err != nil {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"create output directory: %w",
 			err,
 		)
 	}
 
-	versionPath := filepath.Join(
-		directory,
+	return &JSONLRecorder{
+		directory: directory,
+	}, nil
+}
+
+func (r *JSONLRecorder) AppendClusterVersion(
+	observation upgrade.ClusterVersionObservation,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	path := filepath.Join(
+		r.directory,
 		"cluster-version.jsonl",
 	)
 
 	if err := appendJSONLine(
-		versionPath,
-		capture.ClusterVersion,
+		path,
+		observation,
 	); err != nil {
 		return fmt.Errorf(
 			"write ClusterVersion observation: %w",
@@ -41,31 +66,67 @@ func AppendCapture(
 		)
 	}
 
-	for _, observation := range capture.Operators {
-		name := observation.Operator.Name
+	return nil
+}
 
-		if name == "" ||
-			filepath.Base(name) != name {
-			return fmt.Errorf(
-				"invalid ClusterOperator name %q",
-				name,
-			)
-		}
+func (r *JSONLRecorder) AppendOperator(
+	observation operator.Observation,
+) error {
+	name := observation.Operator.Name
 
-		path := filepath.Join(
-			operatorDirectory,
-			name+".jsonl",
+	if name == "" ||
+		name == "." ||
+		name == ".." ||
+		filepath.Base(name) != name {
+		return fmt.Errorf(
+			"invalid ClusterOperator name %q",
+			name,
 		)
+	}
 
-		if err := appendJSONLine(
-			path,
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	path := filepath.Join(
+		r.directory,
+		"operators",
+		name+".jsonl",
+	)
+
+	if err := appendJSONLine(
+		path,
+		observation,
+	); err != nil {
+		return fmt.Errorf(
+			"write ClusterOperator %q observation: %w",
+			name,
+			err,
+		)
+	}
+
+	return nil
+}
+
+func AppendCapture(
+	directory string,
+	capture collector.Capture,
+) error {
+	recorder, err := NewJSONLRecorder(directory)
+	if err != nil {
+		return err
+	}
+
+	if err := recorder.AppendClusterVersion(
+		capture.ClusterVersion,
+	); err != nil {
+		return err
+	}
+
+	for _, observation := range capture.Operators {
+		if err := recorder.AppendOperator(
 			observation,
 		); err != nil {
-			return fmt.Errorf(
-				"write ClusterOperator %q observation: %w",
-				name,
-				err,
-			)
+			return err
 		}
 	}
 
@@ -86,8 +147,6 @@ func appendJSONLine(
 	if err != nil {
 		return err
 	}
-
-	defer file.Close()
-
-	return json.NewEncoder(file).Encode(value)
+	err = json.NewEncoder(file).Encode(value)
+	return errors.Join(err, file.Close())
 }

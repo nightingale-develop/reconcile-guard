@@ -1,0 +1,220 @@
+package app
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/nightingale-develop/reconcile-guard/internal/operator"
+	"github.com/nightingale-develop/reconcile-guard/internal/upgrade"
+)
+
+func liveTestConfig(t *testing.T) string {
+	t.Helper()
+	version := map[string]any{
+		"apiVersion": "config.openshift.io/v1", "kind": "ClusterVersion",
+		"metadata": map[string]any{"name": "version", "resourceVersion": "10"},
+		"status":   map[string]any{"desired": map[string]any{"version": "4.20.0"}},
+	}
+	operatorObject := map[string]any{
+		"apiVersion": "config.openshift.io/v1", "kind": "ClusterOperator",
+		"metadata": map[string]any{"name": "ingress", "resourceVersion": "10"},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("unexpected API mutation: %s", r.Method)
+			http.Error(w, "read only", 405)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("watch") == "true" {
+			if r.URL.Query().Get("resourceVersion") != "10" {
+				t.Errorf("WATCH resourceVersion = %q", r.URL.Query().Get("resourceVersion"))
+			}
+			if r.URL.Query().Get("sendInitialEvents") == "true" {
+				t.Error("expected initial LIST, not streaming list")
+			}
+			if strings.HasSuffix(r.URL.Path, "clusterversions") && r.URL.Query().Get("fieldSelector") != "metadata.name=version" {
+				t.Error("missing ClusterVersion selector")
+			}
+			w.WriteHeader(200)
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+			return
+		}
+		var object any
+		switch r.URL.Path {
+		case "/apis/config.openshift.io/v1/clusterversions/version":
+			object = version
+		case "/apis/config.openshift.io/v1/clusterversions":
+			object = map[string]any{"apiVersion": "config.openshift.io/v1", "kind": "ClusterVersionList", "metadata": map[string]any{"resourceVersion": "10"}, "items": []any{version}}
+		case "/apis/config.openshift.io/v1/clusteroperators":
+			object = map[string]any{"apiVersion": "config.openshift.io/v1", "kind": "ClusterOperatorList", "metadata": map[string]any{"resourceVersion": "10"}, "items": []any{operatorObject}}
+		default:
+			t.Errorf("unexpected API request: %s", r.URL)
+			http.NotFound(w, r)
+			return
+		}
+		if err := json.NewEncoder(w).Encode(object); err != nil {
+			t.Error(err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	path := filepath.Join(t.TempDir(), "config")
+	data := fmt.Sprintf(`apiVersion: v1
+kind: Config
+clusters:
+- name: local
+  cluster:
+    server: %s
+contexts:
+- name: local
+  context:
+    cluster: local
+    user: local
+current-context: local
+users:
+- name: local
+  user: {}
+`, server.URL)
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestCaptureLiveAppendAndDefaultConfig(t *testing.T) {
+	config := liveTestConfig(t)
+	t.Setenv("KUBECONFIG", config)
+	dir := t.TempDir()
+	for _, args := range [][]string{{"capture-live", dir}, {"capture-live", dir, "--kubeconfig", config}} {
+		var out, stderr bytes.Buffer
+		if code := Run(args, &out, &stderr); code != 0 || stderr.Len() != 0 {
+			t.Fatalf("exit=%d stderr=%s", code, &stderr)
+		}
+		if !strings.Contains(out.String(), "ClusterOperators: 1") {
+			t.Fatalf("stdout=%s", &out)
+		}
+	}
+	assertLiveHistories(t, dir, 2)
+}
+
+func assertLiveHistories(t *testing.T, dir string, count int) {
+	t.Helper()
+	versions, err := upgrade.ReadHistory(filepath.Join(dir, "cluster-version.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != count {
+		t.Fatalf("versions=%d", len(versions))
+	}
+	if _, err := upgrade.AnalyzeHistory(versions); err != nil {
+		t.Fatal(err)
+	}
+	operators, err := operator.ReadHistory(filepath.Join(dir, "operators", "ingress.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(operators) != count {
+		t.Fatalf("operators=%d", len(operators))
+	}
+	if _, err := operator.AnalyzeHistory(operators); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"replay-version", filepath.Join(dir, "cluster-version.jsonl")}, {"replay", filepath.Join(dir, "operators", "ingress.jsonl")}} {
+		var out, stderr bytes.Buffer
+		if code := Run(args, &out, &stderr); code != 0 || stderr.Len() != 0 {
+			t.Fatalf("replay exit=%d stderr=%s", code, &stderr)
+		}
+	}
+}
+
+func TestLiveCommandProcess(t *testing.T) {
+	if os.Getenv("RECONCILE_LIVE_TEST_PROCESS") != "1" {
+		return
+	}
+	for i, arg := range os.Args {
+		if arg == "--" {
+			os.Exit(Run(os.Args[i+1:], os.Stdout, os.Stderr))
+		}
+	}
+	os.Exit(99)
+}
+
+func TestRecordLiveSignalsAndWriteError(t *testing.T) {
+	config := liveTestConfig(t)
+	for _, tc := range []struct {
+		name       string
+		signal     os.Signal
+		writeError bool
+	}{
+		{"interrupt", os.Interrupt, false}, {"terminate", syscall.SIGTERM, false}, {"write error", nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if tc.writeError {
+				if err := os.Mkdir(filepath.Join(dir, "cluster-version.jsonl"), 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestLiveCommandProcess$", "--", "record-live", dir, "--kubeconfig", config)
+			cmd.Env = append(os.Environ(), "RECONCILE_LIVE_TEST_PROCESS=1")
+			var out, stderr bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &out, &stderr
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			if !tc.writeError {
+				ready := false
+				for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+					v, ve := upgrade.ReadHistory(filepath.Join(dir, "cluster-version.jsonl"))
+					o, oe := operator.ReadHistory(filepath.Join(dir, "operators", "ingress.jsonl"))
+					if ve == nil && oe == nil && len(v) == 1 && len(o) == 1 {
+						ready = true
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				if !ready {
+					cancel()
+					_ = cmd.Wait()
+					t.Fatalf("initial observations missing: stdout=%s stderr=%s", &out, &stderr)
+				}
+				if err := cmd.Process.Signal(tc.signal); err != nil {
+					cancel()
+					_ = cmd.Wait()
+					t.Fatal(err)
+				}
+			}
+			err := cmd.Wait()
+			if ctx.Err() != nil {
+				t.Fatal("record-live hung")
+			}
+			if tc.writeError {
+				if err == nil || cmd.ProcessState.ExitCode() != 1 || !strings.Contains(stderr.String(), "write ClusterVersion observation") {
+					t.Fatalf("exit=%v stdout=%s stderr=%s", err, &out, &stderr)
+				}
+				if strings.Contains(out.String(), "Recording stopped") {
+					t.Fatal("reported clean shutdown after write error")
+				}
+			} else {
+				if err != nil || stderr.Len() != 0 || !strings.Contains(out.String(), "Recording stopped") {
+					t.Fatalf("exit=%v stdout=%s stderr=%s", err, &out, &stderr)
+				}
+				assertLiveHistories(t, dir, 1)
+			}
+		})
+	}
+}

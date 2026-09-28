@@ -15,6 +15,17 @@
 | `verify-progressing <operator.jsonl> <max-duration>` | Operator-only sampled Progressing check with a positive Go duration. |
 | `verify-progressing-upgrade <version.jsonl> <operator.jsonl> <policy.json>` | Upgrade-correlated Progressing check with an explicit project policy. |
 
+`capture-live <directory> [--kubeconfig <path>]` performs one append operation:
+it GETs the named ClusterVersion and LISTs ClusterOperators. `record-live
+<directory> [--kubeconfig <path>]` keeps both resources under LIST/WATCH until
+SIGINT/SIGTERM (exit `0`). Recording requires LIST/WATCH permissions on both
+resource types in `config.openshift.io`; capture needs GET on ClusterVersion/version
+and LIST on ClusterOperators, without WATCH. Both use the current kubeconfig/context
+unless `--kubeconfig <path>` is supplied. Auth, missing-resource and sink errors exit `1`. Ordinary watch
+recovery is handled by client-go. ClusterVersion is filtered to
+`metadata.name=version`; ClusterOperator deletion is ignored, while missing or
+deleted ClusterVersion is fatal.
+
 All `verify-*` commands accept the optional `--output text|json` (also
 `--output=text|json`). Text is the default. JSON output is a document with
 `schemaVersion`, `command` and `result` fields; the result contains the overall

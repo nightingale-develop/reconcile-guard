@@ -233,6 +233,9 @@ func (c cli) run(args []string) int {
 	case "capture-live":
 		return c.captureLive(args[1:])
 
+	case "record-live":
+		return c.recordLive(args[1:])
+
 	default:
 		fmt.Fprintln(
 			c.stderr,
