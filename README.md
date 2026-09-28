@@ -31,7 +31,7 @@ go build -o reconcile-guard ./cmd/reconcile-guard
   --output json
 ```
 
-The cluster example returns `Aggregate verdict: PASS` for two operators; the JSON example reports PASS for ingress. Both synthetic examples exit with code `0`.
+The cluster example returns `Aggregate verdict: PASS` for two operators; the JSON example reports PASS for ingress. Both synthetic examples exit with code `0`. This is the offline MVP; real OpenShift validation remains future work.
 
 ## Interpreting results
 

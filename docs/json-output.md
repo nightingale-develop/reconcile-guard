@@ -42,3 +42,9 @@ embed the original input snapshots. Keep the source JSONL files with a report
 when the evidence needs to be traced back to its observations. Exit codes stay
 the same as text mode: `0` for PASS, `2` for FAIL, `3` for INCONCLUSIVE and `1`
 for input, usage or output-encoding errors.
+
+The current working tree also contains regression coverage for representative
+PASS (`verify-upgrade`), FAIL (`verify-version-upgrade`) and INCONCLUSIVE
+(`verify-progressing-upgrade`) results. That file is not part of the JSON
+implementation commit yet; its schema assertion compares against the current
+implementation constant.
