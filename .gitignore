@@ -36,3 +36,5 @@ Thumbs.db
 /temp/
 *.tmp
 *.log
+
+/capture/

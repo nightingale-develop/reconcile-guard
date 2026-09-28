@@ -230,6 +230,9 @@ func (c cli) run(args []string) int {
 
 		return contractExitCode(report.Verdict)
 
+	case "capture-live":
+		return c.captureLive(args[1:])
+
 	default:
 		fmt.Fprintln(
 			c.stderr,

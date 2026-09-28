@@ -113,6 +113,10 @@ func (c cli) printUsage() {
 	fmt.Fprintln(c.stdout,
 		"  Verification commands support --output text|json",
 	)
+
+	fmt.Fprintln(c.stdout,
+		"  capture-live <directory> [--kubeconfig <path>]  Capture one live OpenShift observation",
+	)
 }
 
 func (c cli) printVersionReport(report upgrade.ClusterVersionReport) {

@@ -2,7 +2,7 @@
 
 An offline Go CLI for reproducible lifecycle analysis of OpenShift platform operators. ReconcileGuard reads saved ClusterOperator and ClusterVersion observations, reconstructs upgrade phases and checks explicit behavior rules against the supplied evidence.
 
-**Early prototype:** all included fixtures are synthetic; compatibility with a real OpenShift cluster has not been validated.
+**Early prototype:** all included fixtures are synthetic; Live read-only capture has been validated against a real OpenShift cluster. Upgrade contract behavior has not yet been validated during a real cluster upgrade.
 
 ## What it does
 
