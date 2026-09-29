@@ -84,7 +84,8 @@ func VerifyOperatorVersionConsistency(
 			next := states[j]
 
 			if next.Phase != upgrade.UpgradePhaseStable ||
-				next.DesiredVersion != state.DesiredVersion {
+				next.DesiredVersion != state.DesiredVersion ||
+				next.DesiredImage != state.DesiredImage {
 				break
 			}
 

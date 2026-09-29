@@ -11,8 +11,8 @@ Operator observations are correlated with the validated ClusterVersion timeline:
 | Kind | Meaning |
 | --- | --- |
 | EXACT | Same observedAt as a ClusterVersion state; its phase may still be UNKNOWN. |
-| BRACKETED | Between two observations with the same known phase. |
-| AMBIGUOUS | Between different phases or an UNKNOWN endpoint. No phase is guessed. |
+| BRACKETED | Between two observations with the same known phase and target version/image. |
+| AMBIGUOUS | Between different phases, target versions/images, or an UNKNOWN endpoint. No phase is guessed. |
 | OUTSIDE | Before or after the known timeline, or no states available. |
 
 BRACKETED is an inference from matching endpoints, not proof that no unobserved change occurred between samples.
@@ -53,9 +53,15 @@ During an upgrade, an operator may continue reporting its previous version while
 
 After upgrade completion, the reported operator version must match the completed ClusterVersion target. Missing version evidence or missing post-completion observations produce INCONCLUSIVE. A concrete mismatch produces FAIL.
 
-A window starts at a reconstructed COMPLETED observation and extends through consecutive STABLE observations with the same desired version. Its endpoints are inclusive; samples outside these windows are ignored. No completed target, no evaluated versions, a missing target/version or a window without operator observations makes an otherwise passing result INCONCLUSIVE. A mismatch takes precedence and yields FAIL. Duplicate `operator` version entries in an evaluated sample are input errors. Comparison uses exact version strings.
+A window starts at a reconstructed COMPLETED observation and extends through consecutive STABLE observations with the same desired target version and image. A target-version or target-image change closes the window; its endpoints are inclusive and samples outside these windows are ignored. No completed target, no evaluated versions, a missing target/version or a window without operator observations makes an otherwise passing result INCONCLUSIVE. A mismatch takes precedence and yields FAIL. Duplicate `operator` version entries in an evaluated sample are input errors. Comparison uses exact version strings.
 
-This is the implemented rule in [VerifyOperatorVersionConsistency](../internal/contracts/version_consistency.go). The window extension checks phase and desired version; it has no maximum sampling-gap policy. It does not prove state outside the supplied observations or physical continuity between them.
+This is the implemented rule in [VerifyOperatorVersionConsistency](../internal/contracts/version_consistency.go). The window extension checks phase, desired version and image; it has no maximum sampling-gap policy. It does not prove state outside the supplied observations or physical continuity between them.
+
+With asynchronous observation streams, even a successful real upgrade may remain
+INCONCLUSIVE when target/image boundaries, generations or operator observations
+cannot be aligned. The tool does not extrapolate beyond recorded windows or resnapshot
+automatically; this behavior is not a claim that a real upgrade has been
+validated.
 
 ## Multi-operator upgrade report
 

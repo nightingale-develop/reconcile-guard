@@ -220,3 +220,38 @@ func TestPhaseRejectsContradictoryEvidence(t *testing.T) {
 		})
 	}
 }
+
+func TestSyntheticLifecyclePhases(t *testing.T) {
+	observations, err := ReadHistory("../../testdata/upgrade/cluster-version.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	states, err := AnalyzePhases(observations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []UpgradePhase{UpgradePhaseStable, UpgradePhaseStable, UpgradePhaseUpdating, UpgradePhaseUpdating, UpgradePhaseCompleted, UpgradePhaseStable, UpgradePhaseStable}
+	if len(states) != len(want) {
+		t.Fatalf("states=%+v", states)
+	}
+	for i, phase := range want {
+		if states[i].Phase != phase || states[i].DesiredImage != observations[i].ClusterVersion.Status.Desired.Image {
+			t.Fatalf("state %d: %+v want %s", i, states[i], phase)
+		}
+	}
+}
+
+func TestPartialHistoryCompletionTimeIsNotSuccess(t *testing.T) {
+	observations, err := ReadHistory("../../testdata/upgrade/cluster-version.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	observations[4].ClusterVersion.Status.History[0].State = configv1.PartialUpdate
+	states, err := AnalyzePhases(observations[:5])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if states[4].Phase != UpgradePhaseUnknown {
+		t.Fatalf("partial update called complete: %+v", states[4])
+	}
+}

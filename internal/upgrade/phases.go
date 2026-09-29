@@ -19,6 +19,7 @@ type UpgradeState struct {
 	ObservedAt     time.Time
 	Phase          UpgradePhase
 	DesiredVersion string
+	DesiredImage   string
 }
 
 func AnalyzePhases(
@@ -57,6 +58,7 @@ func AnalyzePhases(
 			ObservedAt:     observation.ObservedAt,
 			Phase:          phase,
 			DesiredVersion: observation.ClusterVersion.Status.Desired.Version,
+			DesiredImage:   observation.ClusterVersion.Status.Desired.Image,
 		})
 	}
 

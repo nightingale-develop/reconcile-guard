@@ -55,6 +55,7 @@ Snapshot and replay commands have [their own exit-code semantics](docs/cli.md#ex
 - [JSON output](docs/json-output.md) — schema, evidence fields and machine-readable reports.
 - [Contracts and interpretation](docs/contracts.md) — phases, correlation, evidence requirements and verdict rules.
 - [Development](docs/development.md) — package layout, tests, limitations and next steps.
+- [Real upgrade validation](docs/real-upgrade-validation.md) — pending manual OpenShift/OKD procedure and limits.
 - [Example Progressing policy](examples/progressing-policy.md) — illustrative limits and sampling assumptions.
 
 ## Current limits

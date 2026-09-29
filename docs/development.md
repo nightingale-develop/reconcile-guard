@@ -35,6 +35,12 @@ Live recording uses two shared informers with an initial LIST then WATCH, resync
 
 Next: real OpenShift validation of disconnect/reconnect and expired resourceVersion behavior, with broader comparison policies left for later milestones. kind can test client/watch mechanics; it does not substitute for OpenShift.
 
+The manual [real-upgrade validation procedure](real-upgrade-validation.md) is
+pending a user-executed OpenShift/OKD upgrade. Asynchronous watch streams can
+leave a successful upgrade INCONCLUSIVE; the tool does not extrapolate missing
+observations or resnapshot automatically. CRC supports recording but does not
+support upgrading its OpenShift version.
+
 Run loading and validation are shared by `verify-run` and `compare-runs` in
 `internal/app/run_input.go`; `internal/regression` compares computed contract
 reports without file or CLI access. Tests cover the full verdict matrix,

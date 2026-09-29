@@ -111,7 +111,9 @@ func correlateOperatorObservation(
 
 	if before.Phase == upgrade.UpgradePhaseUnknown ||
 		after.Phase == upgrade.UpgradePhaseUnknown ||
-		before.Phase != after.Phase {
+		before.Phase != after.Phase ||
+		before.DesiredVersion != after.DesiredVersion ||
+		before.DesiredImage != after.DesiredImage {
 		result.Kind = CorrelationAmbiguous
 		return result
 	}

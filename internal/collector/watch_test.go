@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -243,4 +244,67 @@ func waitForCounts(
 		versions,
 		operators,
 	)
+}
+
+func TestLiveRecorderPreservesUpgradeFields(t *testing.T) {
+	versions, err := upgrade.ReadHistory("../../testdata/upgrade/cluster-version.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	operators, err := operator.ReadHistory("../../testdata/upgrade/ingress.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	object := func(value any) *unstructured.Unstructured {
+		t.Helper()
+		data, err := runtime.DefaultUnstructuredConverter.ToUnstructured(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &unstructured.Unstructured{Object: data}
+	}
+	client := liveClient(t, object(&versions[0].ClusterVersion), object(&operators[0].Operator))
+	vwatches, owatches := watchStream(client, "clusterversions"), watchStream(client, "clusteroperators")
+	sink := &memorySink{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	recorder := newLiveRecorder(client, sink, func() time.Time { return now })
+	done := make(chan error, 1)
+	go func() { done <- recorder.Run(ctx) }()
+	vw, ow := nextWatch(t, vwatches), nextWatch(t, owatches)
+	waitForCounts(t, sink, 1, 1)
+	for i := 1; i < len(versions); i++ {
+		vw.Modify(object(&versions[i].ClusterVersion))
+		waitForCounts(t, sink, i+1, 1)
+	}
+	for i := 1; i < len(operators); i++ {
+		ow.Modify(object(&operators[i].Operator))
+		waitForCounts(t, sink, len(versions), i+1)
+	}
+	cancel()
+	if err := recordingResult(t, done); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.versions) != len(versions) || len(sink.operators) != len(operators) {
+		t.Fatal("lost or duplicated observations")
+	}
+	for i, want := range versions {
+		got := sink.versions[i]
+		if !reflect.DeepEqual(got.ClusterVersion, want.ClusterVersion) {
+			t.Fatalf("ClusterVersion fields changed at %d", i)
+		}
+		if !got.ObservedAt.Equal(now.Add(time.Duration(i)*time.Nanosecond)) || got.ObservedAt.Location() != time.UTC {
+			t.Fatalf("wrong capture timestamp: %v", got.ObservedAt)
+		}
+	}
+	for i, want := range operators {
+		got := sink.operators[i]
+		if !reflect.DeepEqual(got.Operator, want.Operator) {
+			t.Fatalf("ClusterOperator fields changed at %d", i)
+		}
+		if !got.ObservedAt.Equal(now.Add(time.Duration(i)*time.Nanosecond)) || got.ObservedAt.Location() != time.UTC {
+			t.Fatalf("wrong operator capture timestamp: %v", got.ObservedAt)
+		}
+	}
 }
