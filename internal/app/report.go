@@ -119,7 +119,11 @@ func (c cli) printUsage() {
 	)
 
 	fmt.Fprintln(c.stdout,
-		"  record-live <directory> [--kubeconfig <path>]  Continuously record OpenShift changes",
+		"  record-live <runs-directory> [--kubeconfig <path>]  Record a new OpenShift run",
+	)
+
+	fmt.Fprintln(c.stdout,
+		"  verify-run <run-directory>  Verify all operator histories from a recorded run",
 	)
 }
 

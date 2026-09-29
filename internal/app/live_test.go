@@ -16,10 +16,11 @@ import (
 	"time"
 
 	"github.com/nightingale-develop/reconcile-guard/internal/operator"
+	"github.com/nightingale-develop/reconcile-guard/internal/recording"
 	"github.com/nightingale-develop/reconcile-guard/internal/upgrade"
 )
 
-func liveTestConfig(t *testing.T) string {
+func liveTestConfig(t *testing.T, beforeVersionList ...func()) string {
 	t.Helper()
 	version := map[string]any{
 		"apiVersion": "config.openshift.io/v1", "kind": "ClusterVersion",
@@ -57,6 +58,9 @@ func liveTestConfig(t *testing.T) string {
 		case "/apis/config.openshift.io/v1/clusterversions/version":
 			object = version
 		case "/apis/config.openshift.io/v1/clusterversions":
+			for _, before := range beforeVersionList {
+				before()
+			}
 			object = map[string]any{"apiVersion": "config.openshift.io/v1", "kind": "ClusterVersionList", "metadata": map[string]any{"resourceVersion": "10"}, "items": []any{version}}
 		case "/apis/config.openshift.io/v1/clusteroperators":
 			object = map[string]any{"apiVersion": "config.openshift.io/v1", "kind": "ClusterOperatorList", "metadata": map[string]any{"resourceVersion": "10"}, "items": []any{operatorObject}}
@@ -152,7 +156,6 @@ func TestLiveCommandProcess(t *testing.T) {
 }
 
 func TestRecordLiveSignalsAndWriteError(t *testing.T) {
-	config := liveTestConfig(t)
 	for _, tc := range []struct {
 		name       string
 		signal     os.Signal
@@ -162,11 +165,21 @@ func TestRecordLiveSignalsAndWriteError(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			if tc.writeError {
-				if err := os.Mkdir(filepath.Join(dir, "cluster-version.jsonl"), 0755); err != nil {
-					t.Fatal(err)
+			config := liveTestConfig(t, func() {
+				if !tc.writeError {
+					return
 				}
-			}
+				manifests, err := filepath.Glob(filepath.Join(dir, "*", "run.json"))
+				if err != nil || len(manifests) != 1 {
+					t.Errorf("expected one new run, got %v (%v)", manifests, err)
+					return
+				}
+				if err := os.Mkdir(filepath.Join(filepath.Dir(manifests[0]), "cluster-version.jsonl"), 0755); err != nil {
+					t.Error(err)
+				}
+			})
+			runDir := ""
+
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestLiveCommandProcess$", "--", "record-live", dir, "--kubeconfig", config)
@@ -179,8 +192,14 @@ func TestRecordLiveSignalsAndWriteError(t *testing.T) {
 			if !tc.writeError {
 				ready := false
 				for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
-					v, ve := upgrade.ReadHistory(filepath.Join(dir, "cluster-version.jsonl"))
-					o, oe := operator.ReadHistory(filepath.Join(dir, "operators", "ingress.jsonl"))
+					manifests, _ := filepath.Glob(filepath.Join(dir, "*", "run.json"))
+					if len(manifests) != 1 {
+						time.Sleep(10 * time.Millisecond)
+						continue
+					}
+					runDir = filepath.Dir(manifests[0])
+					v, ve := upgrade.ReadHistory(filepath.Join(runDir, "cluster-version.jsonl"))
+					o, oe := operator.ReadHistory(filepath.Join(runDir, "operators", "ingress.jsonl"))
 					if ve == nil && oe == nil && len(v) == 1 && len(o) == 1 {
 						ready = true
 						break
@@ -202,6 +221,27 @@ func TestRecordLiveSignalsAndWriteError(t *testing.T) {
 			if ctx.Err() != nil {
 				t.Fatal("record-live hung")
 			}
+			manifests, _ := filepath.Glob(filepath.Join(dir, "*", "run.json"))
+			if len(manifests) != 1 {
+				t.Fatalf("expected one run manifest, got %v", manifests)
+			}
+			manifest, readErr := recording.ReadRunManifest(filepath.Dir(manifests[0]))
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			wantStatus := recording.RunStatusStopped
+			if tc.writeError {
+				wantStatus = recording.RunStatusFailed
+			}
+			if manifest.Status != wantStatus || manifest.EndedAt == nil || manifest.EndedAt.Before(manifest.StartedAt) {
+				t.Fatalf("incorrect final manifest: %+v", manifest)
+			}
+			if tc.writeError && manifest.Error == "" {
+				t.Fatal("failed run lost error")
+			}
+			if !tc.writeError && (len(manifest.Operators) != 1 || manifest.Operators[0] != "ingress") {
+				t.Fatalf("operator inventory=%v", manifest.Operators)
+			}
 			if tc.writeError {
 				if err == nil || cmd.ProcessState.ExitCode() != 1 || !strings.Contains(stderr.String(), "write ClusterVersion observation") {
 					t.Fatalf("exit=%v stdout=%s stderr=%s", err, &out, &stderr)
@@ -213,7 +253,7 @@ func TestRecordLiveSignalsAndWriteError(t *testing.T) {
 				if err != nil || stderr.Len() != 0 || !strings.Contains(out.String(), "Recording stopped") {
 					t.Fatalf("exit=%v stdout=%s stderr=%s", err, &out, &stderr)
 				}
-				assertLiveHistories(t, dir, 1)
+				assertLiveHistories(t, runDir, 1)
 			}
 		})
 	}

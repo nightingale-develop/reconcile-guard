@@ -8,6 +8,7 @@ import (
 	"github.com/nightingale-develop/reconcile-guard/internal/contracts"
 	"github.com/nightingale-develop/reconcile-guard/internal/operator"
 	"github.com/nightingale-develop/reconcile-guard/internal/upgrade"
+	appversion "github.com/nightingale-develop/reconcile-guard/internal/version"
 )
 
 func (c cli) run(args []string) int {
@@ -36,7 +37,10 @@ func (c cli) run(args []string) int {
 
 	switch args[0] {
 	case "version":
-		fmt.Fprintln(c.stdout, "ReconcileGuard v0.1.0-dev")
+		fmt.Fprintln(
+			c.stdout,
+			"ReconcileGuard v"+appversion.Current,
+		)
 		return 0
 
 	case "help":
@@ -235,6 +239,9 @@ func (c cli) run(args []string) int {
 
 	case "record-live":
 		return c.recordLive(args[1:])
+
+	case "verify-run":
+		return c.verifyRun(args)
 
 	default:
 		fmt.Fprintln(

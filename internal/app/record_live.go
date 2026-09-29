@@ -6,9 +6,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/nightingale-develop/reconcile-guard/internal/collector"
 	"github.com/nightingale-develop/reconcile-guard/internal/recording"
+	appversion "github.com/nightingale-develop/reconcile-guard/internal/version"
 )
 
 func (c cli) recordLive(args []string) int {
@@ -18,18 +20,48 @@ func (c cli) recordLive(args []string) int {
 		return 1
 	}
 
-	config, err := loadLiveConfig(options.kubeconfig)
+	config, err :=
+		loadLiveConfig(options.kubeconfig)
+	if err != nil {
+		fmt.Fprintln(c.stderr, "Error:", err)
+		return 1
+	}
+
+	startedAt := time.Now().UTC()
+
+	run, err := recording.StartRun(
+		options.outputDirectory,
+		appversion.Current,
+		config.Host,
+		startedAt,
+	)
 	if err != nil {
 		fmt.Fprintln(c.stderr, "Error:", err)
 		return 1
 	}
 
 	recorder, err :=
-		recording.NewJSONLRecorder(
-			options.outputDirectory,
+		recording.NewRunRecorder(
+			run.Directory(),
 		)
 	if err != nil {
+		finishErr := run.Finish(
+			recording.RunStatusFailed,
+			time.Now().UTC(),
+			recording.RunSnapshot{},
+			err,
+		)
+
 		fmt.Fprintln(c.stderr, "Error:", err)
+
+		if finishErr != nil {
+			fmt.Fprintln(
+				c.stderr,
+				"Error finalizing run:",
+				finishErr,
+			)
+		}
+
 		return 1
 	}
 
@@ -39,7 +71,17 @@ func (c cli) recordLive(args []string) int {
 			recorder,
 		)
 	if err != nil {
+		finishErr := run.Finish(
+			recording.RunStatusFailed,
+			time.Now().UTC(),
+			recorder.Snapshot(),
+			err,
+		)
+
 		fmt.Fprintln(c.stderr, "Error:", err)
+		if finishErr != nil {
+			fmt.Fprintln(c.stderr, "Error finalizing run:", finishErr)
+		}
 		return 1
 	}
 
@@ -57,8 +99,14 @@ func (c cli) recordLive(args []string) int {
 
 	fmt.Fprintln(
 		c.stdout,
+		"Run:",
+		run.Manifest().RunID,
+	)
+
+	fmt.Fprintln(
+		c.stdout,
 		"Output:",
-		options.outputDirectory,
+		run.Directory(),
 	)
 
 	fmt.Fprintln(
@@ -66,7 +114,39 @@ func (c cli) recordLive(args []string) int {
 		"Press Ctrl+C to stop",
 	)
 
-	if err := liveRecorder.Run(ctx); err != nil {
+	runErr := liveRecorder.Run(ctx)
+
+	if runErr != nil {
+		finishErr := run.Finish(
+			recording.RunStatusFailed,
+			time.Now().UTC(),
+			recorder.Snapshot(),
+			runErr,
+		)
+
+		fmt.Fprintln(
+			c.stderr,
+			"Error:",
+			runErr,
+		)
+
+		if finishErr != nil {
+			fmt.Fprintln(
+				c.stderr,
+				"Error finalizing run:",
+				finishErr,
+			)
+		}
+
+		return 1
+	}
+
+	if err := run.Finish(
+		recording.RunStatusStopped,
+		time.Now().UTC(),
+		recorder.Snapshot(),
+		nil,
+	); err != nil {
 		fmt.Fprintln(c.stderr, "Error:", err)
 		return 1
 	}

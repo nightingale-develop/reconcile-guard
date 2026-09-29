@@ -31,10 +31,14 @@ go build -o reconcile-guard ./cmd/reconcile-guard
   --output json
 
 # Record live JSONL observations (requires OpenShift LIST/WATCH access)
-./reconcile-guard record-live ./live-recording
+./reconcile-guard record-live ./live-runs
+
+# After stopping record-live with Ctrl+C, verify one finalized recording run.
+RUN_DIR='./live-runs/REPLACE_WITH_RUN_ID'
+./reconcile-guard verify-run "$RUN_DIR" --output text
 ```
 
-The cluster example returns `Aggregate verdict: PASS` for two operators; the JSON example reports PASS for ingress. Both synthetic examples exit with code `0`. This is the offline MVP; real OpenShift validation remains future work.
+The cluster example returns `Aggregate verdict: PASS` for two operators; the JSON example reports PASS for ingress. Both synthetic examples exit with code `0`. Live recording creates a timestamped run directory with `run.json`, `cluster-version.jsonl` and per-operator JSONL files; replay those generated paths or use `verify-run`. The run manifest validates local consistency, not cluster provenance or full-cluster coverage.
 
 ## Interpreting results
 

@@ -12,6 +12,7 @@
 | `verify-upgrade <version.jsonl> <operator.jsonl>` | Correlate both timelines and evaluate the normal-upgrade condition contract for one operator. |
 | `verify-version-upgrade <version.jsonl> <operator.jsonl>` | Verify that the ClusterOperator reports the completed OpenShift target version after upgrade completion. |
 | `verify-cluster-upgrade <version.jsonl> <operator.jsonl>...` | Run upgrade contracts for multiple supplied ClusterOperators and produce an aggregate report. |
+| `verify-run <runs-directory/run-id>` | Verify a stopped recording run's condition and version histories; supports `--output text|json`. |
 | `verify-progressing <operator.jsonl> <max-duration>` | Operator-only sampled Progressing check with a positive Go duration. |
 | `verify-progressing-upgrade <version.jsonl> <operator.jsonl> <policy.json>` | Upgrade-correlated Progressing check with an explicit project policy. |
 
@@ -25,6 +26,20 @@ unless `--kubeconfig <path>` is supplied. Auth, missing-resource and sink errors
 recovery is handled by client-go. ClusterVersion is filtered to
 `metadata.name=version`; ClusterOperator deletion is ignored, while missing or
 deleted ClusterVersion is fatal.
+
+`record-live <runs-directory>` creates a unique UTC run directory containing
+`run.json`, `cluster-version.jsonl` and `operators/<name>.jsonl`. The manifest
+is finalized as `stopped` on SIGINT/SIGTERM or `failed` on an error. `verify-run`
+accepts only a stopped run, validates its manifest and local histories, and
+returns `0` PASS, `2` FAIL, `3` INCONCLUSIVE or `1` for invalid/incomplete input.
+The run must be `stopped`; `recording` and `failed` runs are rejected before any
+verdict. It checks strict manifest inventory, operator filenames and names,
+local/resolved paths, and nonempty clusterID consistency before conditions and
+version consistency. Progressing duration is not part of this aggregate. A run
+manifest does not provide cryptographic provenance or prove that the full
+cluster was recorded. Replay paths are the generated files,
+for example `replay-version <runs-root>/<run-id>/cluster-version.jsonl` and
+`replay <runs-root>/<run-id>/operators/ingress.jsonl`.
 
 All `verify-*` commands accept the optional `--output text|json` (also
 `--output=text|json`). Text is the default. JSON output is a document with

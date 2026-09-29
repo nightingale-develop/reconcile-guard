@@ -43,8 +43,13 @@ when the evidence needs to be traced back to its observations. Exit codes stay
 the same as text mode: `0` for PASS, `2` for FAIL, `3` for INCONCLUSIVE and `1`
 for input, usage or output-encoding errors.
 
-The current working tree also contains regression coverage for representative
+Regression coverage includes representative
 PASS (`verify-upgrade`), FAIL (`verify-version-upgrade`) and INCONCLUSIVE
-(`verify-progressing-upgrade`) results. That file is not part of the JSON
-implementation commit yet; its schema assertion compares against the current
-implementation constant.
+(`verify-progressing-upgrade`) results; its schema assertion compares against
+the current implementation constant.
+
+`verify-run --output json` uses the same envelope with `schemaVersion: "1"` and
+`command: "verify-run"`; its result is the condition/version aggregate and does
+not include Progressing duration. A recording that is `recording`, `failed`,
+invalid, or inconsistent is an input error: diagnostics go to stderr, exit
+code is `1`, and no verdict JSON is emitted.
