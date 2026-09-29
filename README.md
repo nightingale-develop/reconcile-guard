@@ -36,9 +36,12 @@ go build -o reconcile-guard ./cmd/reconcile-guard
 # After stopping record-live with Ctrl+C, verify one finalized recording run.
 RUN_DIR='./live-runs/REPLACE_WITH_RUN_ID'
 ./reconcile-guard verify-run "$RUN_DIR" --output text
+
+# Compare two finalized runs
+./reconcile-guard compare-runs ./baseline-runs/REPLACE_WITH_RUN_ID ./candidate-runs/REPLACE_WITH_RUN_ID --output text
 ```
 
-The cluster example returns `Aggregate verdict: PASS` for two operators; the JSON example reports PASS for ingress. Both synthetic examples exit with code `0`. Live recording creates a timestamped run directory with `run.json`, `cluster-version.jsonl` and per-operator JSONL files; replay those generated paths or use `verify-run`. The run manifest validates local consistency, not cluster provenance or full-cluster coverage.
+The cluster example returns `Aggregate verdict: PASS` for two operators; the JSON example reports PASS for ingress. Both synthetic examples exit with code `0`. Live recording creates a timestamped run directory with `run.json`, `cluster-version.jsonl` and per-operator JSONL files; replay those generated paths or use `verify-run`. The run manifest validates local consistency, not cluster provenance or full-cluster coverage. `compare-runs` compares existing conditions/version contract verdicts; PASS means no detected regression, not candidate health. Persistent FAIL is unchanged, and an INCONCLUSIVE baseline cannot establish a regression. See the [CLI reference](docs/cli.md) for scope differences, output and exit codes.
 
 ## Interpreting results
 

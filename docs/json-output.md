@@ -53,3 +53,27 @@ the current implementation constant.
 not include Progressing duration. A recording that is `recording`, `failed`,
 invalid, or inconsistent is an input error: diagnostics go to stderr, exit
 code is `1`, and no verdict JSON is emitted.
+
+`compare-runs --output json` uses `schemaVersion: "1"`, `command:
+"compare-runs"` and a separate `comparison` envelope. It reports baseline and
+candidate summaries, scope, sorted per-operator contract changes and the
+aggregate verdict. It compares only conditions and version contracts;
+Progressing, durations, samples and provenance are excluded.
+
+The envelope has `comparison` instead of `result`. Each `baseline`/`candidate`
+summary contains `runId`, `clusterId`, `finalDesiredVersion` and
+`verificationVerdict`. The final desired version comes from the last
+ClusterVersion observation; it does not certify completion.
+`scope` contains `commonOperators` (a count), `baselineOnlyOperators` and
+`candidateOnlyOperators` (sorted arrays). Common operators are sorted by name;
+each includes its comparison `verdict`, `baselineVerdict`, `candidateVerdict`
+and `contracts`. Contracts contain `name`, both source verdicts and `change`:
+`UNCHANGED`, `REGRESSION`, `IMPROVEMENT` or `INCONCLUSIVE`. Conditions precede
+version consistency. Missing contract verdicts are omitted, never reported as
+PASS; empty scope arrays are `[]`.
+
+Comparison PASS means no detected regression, not candidate verification PASS.
+FAIL→FAIL is `UNCHANGED`; any INCONCLUSIVE side prevents claiming regression
+for that contract. Exit codes remain `0`/`2`/`3` for comparison PASS/FAIL/INCONCLUSIVE
+and `1` for errors. CLI regression tests assert the literal schema version `"1"`
+and preserve both verification verdicts independently of the comparison.

@@ -31,6 +31,12 @@ Pipeline: data → observations → validated timelines → upgrade phases → c
 
 ## Limitations and next steps
 
-Live recording uses two shared informers with an initial LIST then WATCH, resync disabled, per-resource UTC timestamps and JSONL sinks. Client-go handles ordinary renewal and resourceVersion recovery; real OpenShift disconnect and expired-resourceVersion validation remains open. Implemented contracts cover normal-upgrade conditions, policy-defined Progressing duration and post-completion operator version consistency. Verification commands provide text output by default and an opt-in schema-versioned JSON report. Supplied histories must remain traceable to a comparable source run; the CLI cannot establish cluster provenance. Sampling gaps and clock differences limit inference.
+Live recording uses two shared informers with an initial LIST then WATCH, resync disabled, per-resource UTC timestamps and JSONL sinks. Client-go handles ordinary renewal and resourceVersion recovery; real OpenShift disconnect and expired-resourceVersion validation remains open. Run manifests support local validation with `verify-run`; `compare-runs` compares only conditions/version verdicts between two validated runs. Verification commands provide text output by default and an opt-in schema-versioned JSON report. Supplied histories must remain traceable to a comparable source run; the CLI cannot establish cluster provenance. Sampling gaps and clock differences limit inference.
 
-Next: real OpenShift validation of disconnect/reconnect and expired resourceVersion behavior, then comparable-run regression analysis. kind can test client/watch mechanics; it does not substitute for OpenShift.
+Next: real OpenShift validation of disconnect/reconnect and expired resourceVersion behavior, with broader comparison policies left for later milestones. kind can test client/watch mechanics; it does not substitute for OpenShift.
+
+Run loading and validation are shared by `verify-run` and `compare-runs` in
+`internal/app/run_input.go`; `internal/regression` compares computed contract
+reports without file or CLI access. Tests cover the full verdict matrix,
+missing contracts, scope and precedence, ordering, input immutability,
+persistent FAIL, different clusters/versions, text/JSON exits and output errors.

@@ -25,10 +25,10 @@ func (c cli) run(args []string) int {
 	}
 
 	if outputSpecified &&
-		!isVerificationCommand(args[0]) {
+		!supportsStructuredOutput(args[0]) {
 		fmt.Fprintln(
 			c.stderr,
-			"Error: --output is supported only by verify commands",
+			"Error: --output is supported only by verify commands or compare-runs",
 		)
 		return 1
 	}
@@ -242,6 +242,8 @@ func (c cli) run(args []string) int {
 
 	case "verify-run":
 		return c.verifyRun(args)
+	case "compare-runs":
+		return c.compareRuns(args)
 
 	default:
 		fmt.Fprintln(

@@ -85,3 +85,17 @@ the input snapshots do not contain.
 
 
 At least one operator history is required; duplicate operator names are input errors. The CLI prints counts and per-operator verdicts in text mode, and exposes the corresponding contract details and evidence in JSON mode. The JSON document is not a self-contained evidence archive: preserve the ClusterVersion history and all supplied operator histories to trace findings back to the original snapshots.
+
+`compare-runs` compares two independently validated stopped run directories.
+It compares only conditions and operator-version verdicts for matching
+operators: PASS→FAIL is a regression, FAIL→PASS an improvement, and PASS→PASS or FAIL→FAIL unchanged. Missing or INCONCLUSIVE contracts are inconclusive;
+aggregate precedence is FAIL, then INCONCLUSIVE, then PASS. Different cluster
+IDs or target versions are allowed after within-run validation. PASS means no
+detected regression among compared contracts; it does not certify the candidate
+run or either run's completeness.
+
+Persistent FAIL is not a new regression. Any INCONCLUSIVE side, including
+INCONCLUSIVE→FAIL, leaves that contract comparison inconclusive. A missing
+operator on either side makes the aggregate INCONCLUSIVE unless a comparable
+contract regresses. Progressing duration requires a separate policy and is not
+included in v1 comparison.

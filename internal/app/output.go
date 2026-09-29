@@ -81,8 +81,8 @@ func parseOutputOption(
 	return clean, format, specified, nil
 }
 
-func isVerificationCommand(command string) bool {
-	return strings.HasPrefix(command, "verify-")
+func supportsStructuredOutput(command string) bool {
+	return strings.HasPrefix(command, "verify-") || command == "compare-runs"
 }
 
 func (c cli) writeJSON(

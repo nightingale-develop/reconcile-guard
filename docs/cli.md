@@ -13,6 +13,7 @@
 | `verify-version-upgrade <version.jsonl> <operator.jsonl>` | Verify that the ClusterOperator reports the completed OpenShift target version after upgrade completion. |
 | `verify-cluster-upgrade <version.jsonl> <operator.jsonl>...` | Run upgrade contracts for multiple supplied ClusterOperators and produce an aggregate report. |
 | `verify-run <runs-directory/run-id>` | Verify a stopped recording run's condition and version histories; supports `--output text|json`. |
+| `compare-runs <baseline-run-directory> <candidate-run-directory>` | Compare conditions/version verdicts between two stopped runs; supports `--output text|json`. |
 | `verify-progressing <operator.jsonl> <max-duration>` | Operator-only sampled Progressing check with a positive Go duration. |
 | `verify-progressing-upgrade <version.jsonl> <operator.jsonl> <policy.json>` | Upgrade-correlated Progressing check with an explicit project policy. |
 
@@ -40,6 +41,23 @@ manifest does not provide cryptographic provenance or prove that the full
 cluster was recorded. Replay paths are the generated files,
 for example `replay-version <runs-root>/<run-id>/cluster-version.jsonl` and
 `replay <runs-root>/<run-id>/operators/ingress.jsonl`.
+
+`compare-runs` loads and verifies both stopped runs, then compares only the
+normal-upgrade conditions and operator-version contracts. P→F is a regression,
+F→P an improvement, P→P and F→F are unchanged, and missing or inconclusive
+contracts are inconclusive. FAIL outranks INCONCLUSIVE, which outranks PASS;
+operator scope differences are inconclusive unless a real regression is found.
+Output is sorted by operator name. Different cluster IDs and target versions
+are allowed after each run passes local validation. No durations, samples,
+Progressing contract or provenance score is included. Both split and equals forms
+of `--output text|json` are supported, with text as the default.
+
+Comparison PASS means no detected regression, not candidate health: persistent
+FAIL→FAIL is unchanged and may produce comparison PASS while candidate
+verification remains FAIL. An INCONCLUSIVE baseline cannot prove a regression,
+even when the candidate is FAIL. Both verification verdicts are printed.
+Exit codes are `0` comparison PASS, `1` input/usage/output error, `2` regression
+FAIL and `3` comparison INCONCLUSIVE, in both text and JSON.
 
 All `verify-*` commands accept the optional `--output text|json` (also
 `--output=text|json`). Text is the default. JSON output is a document with
