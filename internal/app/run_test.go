@@ -64,7 +64,7 @@ func TestRun(t *testing.T) {
 	}{
 		{"help", []string{"help"}, 0, "verify-upgrade", ""},
 		{"no command", nil, 0, "Usage:", ""},
-		{"version", []string{"version"}, 0, "v0.1.0-dev", ""},
+		{"version", []string{"version"}, 0, "v0.1.0", ""},
 		{"unknown", []string{"bogus"}, 1, "", "Unknown command:"},
 		{"check ok", []string{"check", "../../examples/ingress-ok.json"}, 0, "NOT DEGRADED (reported)", ""},
 		{"check degraded", []string{"check", "../../examples/ingress.json"}, 2, "Result: DEGRADED", ""},
@@ -99,7 +99,7 @@ func TestRun(t *testing.T) {
 			}
 		}
 	}
-	// Concrete failure must reach the CLI with evidence and exit code 2.
+	// Adverse upgrade conditions retain evidence without asserting a violation.
 	data, err := os.ReadFile("../../examples/ingress-upgrade-history.jsonl")
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func TestRun(t *testing.T) {
 	}
 	var out, stderr bytes.Buffer
 	code := Run([]string{"verify-upgrade", "../../examples/cluster-version-history.jsonl", fail}, &out, &stderr)
-	if code != 2 || !strings.Contains(out.String(), "Degraded=True") || !strings.Contains(out.String(), "correlation=EXACT") || stderr.Len() != 0 {
+	if code != 3 || !strings.Contains(out.String(), "Degraded=True") || !strings.Contains(out.String(), "correlation=EXACT") || stderr.Len() != 0 {
 		t.Fatalf("exit %d: %s %s", code, &out, &stderr)
 	}
 	// Snapshot Unknown remains diagnostic exit code 3.
@@ -135,5 +135,12 @@ func TestRun(t *testing.T) {
 	stderr.Reset()
 	if code = Run([]string{"check", fail}, &out, &stderr); code != 3 {
 		t.Fatalf("missing Degraded: exit %d", code)
+	}
+}
+
+func TestReleaseVersionOutput(t *testing.T) {
+	var out, stderr bytes.Buffer
+	if code := Run([]string{"version"}, &out, &stderr); code != 0 || out.String() != "ReconcileGuard v0.1.0\n" || stderr.Len() != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, out.String(), stderr.String())
 	}
 }

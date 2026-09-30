@@ -4,7 +4,7 @@
 
 | Command | Result |
 | --- | --- |
-| `help` / `version` | Show usage / the development version string. |
+| `help` / `version` | Show usage / `ReconcileGuard v0.1.0`. |
 | `check <file>` | Report the snapshot's Degraded condition. False does not establish overall health. |
 | `replay <file.jsonl>` | Report changes in Available, Progressing and Degraded between adjacent observations. Missing conditions are counted as uncompared pairs, never bridged. |
 | `check-version <file.json>` | Inspect ClusterVersion status.desired, conditions and update history. |
@@ -20,17 +20,27 @@
 `capture-live <directory> [--kubeconfig <path>]` performs one append operation:
 it GETs the named ClusterVersion and LISTs ClusterOperators. `record-live
 <directory> [--kubeconfig <path>]` keeps both resources under LIST/WATCH until
-SIGINT/SIGTERM (exit `0`). Recording requires LIST/WATCH permissions on both
-resource types in `config.openshift.io`; capture needs GET on ClusterVersion/version
+SIGINT/SIGTERM. Recording requires LIST/WATCH permissions on both
+resource types in `config.openshift.io` plus GET on ClusterVersion/version for
+final capture; capture-live needs GET on ClusterVersion/version
 and LIST on ClusterOperators, without WATCH. Both use the current kubeconfig/context
-unless `--kubeconfig <path>` is supplied. Auth, missing-resource and sink errors exit `1`. Ordinary watch
+unless `--kubeconfig <path>` is supplied. Initial authentication, Forbidden, missing-resource and sink errors exit `1`.
+After an informer has synced, transient Unauthorized is retried by client-go. Ordinary watch
 recovery is handled by client-go. ClusterVersion is filtered to
 `metadata.name=version`; ClusterOperator deletion is ignored, while missing or
 deleted ClusterVersion is fatal.
 
 `record-live <runs-directory>` creates a unique UTC run directory containing
 `run.json`, `cluster-version.jsonl` and `operators/<name>.jsonl`. The manifest
-is finalized as `stopped` on SIGINT/SIGTERM or `failed` on an error. `verify-run`
+is finalized as `stopped` only after graceful final capture succeeds (exit `0`),
+or `failed` on an error (exit `1`). After SIGINT/SIGTERM the WATCH workers stop
+and their writes drain; the recorder reuses capture-live reads for GET CV →
+LIST all CO, then GET CV again to close the temporal bracket. Final capture has
+a separate 30-second API context; it does not reuse the cancelled watch context.
+API or write errors, including partial final writes, prevent `stopped`.
+Final operators are sorted by name and appended even with unchanged
+resourceVersion, using fresh UTC timestamps with per-resource monotonicity.
+Ordinary WATCH deduplication is unchanged. No CLI or artifact schema changes. `verify-run`
 accepts only a stopped run, validates its manifest and local histories, and
 returns `0` PASS, `2` FAIL, `3` INCONCLUSIVE or `1` for invalid/incomplete input.
 The run must be `stopped`; `recording` and `failed` runs are rejected before any

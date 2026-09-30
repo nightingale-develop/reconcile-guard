@@ -134,10 +134,9 @@ func VerifyNormalUpgradeOperatorConditions(
 	}
 
 	switch {
-	case len(report.Findings) > 0:
-		report.Verdict = ContractFail
-
-	case report.UpgradeSamples == 0,
+	// Adverse snapshots alone do not establish a duration/policy violation.
+	case len(report.Findings) > 0,
+		report.UpgradeSamples == 0,
 		report.MissingConditions > 0,
 		report.AmbiguousSamples > 0,
 		report.OutsideSamples > 0,

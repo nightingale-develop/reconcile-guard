@@ -2,7 +2,7 @@
 
 An offline Go CLI for reproducible lifecycle analysis of OpenShift platform operators, with read-only live capture and recording. ReconcileGuard reads saved ClusterOperator and ClusterVersion observations, reconstructs upgrade phases and checks explicit behavior rules against supplied evidence.
 
-**Early prototype:** all included fixtures are synthetic. Live read-only recording is available; a prior user-reported capture succeeded against a real OpenShift cluster, but this is historical evidence rather than a validation run here. Upgrade contract behavior has not yet been validated during a real cluster upgrade.
+**v0.1.0:** two user-executed OKD upgrades (4.20 → 4.21 and 4.21 → 4.22) exercised the recording and analysis pipeline. The second validated graceful final capture on the real API and operator-version consistency for all 34 recorded operators. CRC/OpenShift Local stop/start also validated reconnect/relist, including recovery from transient Unauthorized after startup. Included fixtures remain synthetic; these runs do not prove lossless delivery or exhaustive platform compatibility. See the [validation record](docs/real-upgrade-validation.md).
 
 ## What it does
 
@@ -30,11 +30,11 @@ go build -o reconcile-guard ./cmd/reconcile-guard
   examples/ingress-upgrade-history.jsonl \
   --output json
 
-# Record live JSONL observations (requires OpenShift LIST/WATCH access)
-./reconcile-guard record-live ./live-runs
+# Record live JSONL observations (LIST/WATCH plus GET ClusterVersion access)
+./reconcile-guard record-live ./runs
 
 # After stopping record-live with Ctrl+C, verify one finalized recording run.
-RUN_DIR='./live-runs/REPLACE_WITH_RUN_ID'
+RUN_DIR='./runs/REPLACE_WITH_RUN_ID'
 ./reconcile-guard verify-run "$RUN_DIR" --output text
 
 # Compare two finalized runs
@@ -55,14 +55,14 @@ Snapshot and replay commands have [their own exit-code semantics](docs/cli.md#ex
 - [JSON output](docs/json-output.md) — schema, evidence fields and machine-readable reports.
 - [Contracts and interpretation](docs/contracts.md) — phases, correlation, evidence requirements and verdict rules.
 - [Development](docs/development.md) — package layout, tests, limitations and next steps.
-- [Real upgrade validation](docs/real-upgrade-validation.md) — pending manual OpenShift/OKD procedure and limits.
+- [Real upgrade validation](docs/real-upgrade-validation.md) — manual OpenShift/OKD procedure, first-run findings and limits.
 - [Example Progressing policy](examples/progressing-policy.md) — illustrative limits and sampling assumptions.
 
 ## Current limits
 
-Live recording now writes read-only ClusterVersion and ClusterOperator JSONL streams. Verification remains offline, and there is no automatic root-cause diagnosis. Client-go handles ordinary LIST/WATCH renewal and resourceVersion recovery; real disconnect and expired-resourceVersion behavior on OpenShift remain unvalidated. Gaps between snapshots limit what can be concluded.
+Live recording now writes read-only ClusterVersion and ClusterOperator JSONL streams. Verification remains offline, and there is no automatic root-cause diagnosis. Client-go handles ordinary LIST/WATCH renewal and resourceVersion recovery; real reconnect/relist was exercised through CRC stop/start. Expired-resourceVersion recovery has separate synthetic coverage; it has not been independently demonstrated on a real API. Graceful shutdown makes fresh final reads before marking the run stopped. Adverse conditions during UPDATING are evidence for INCONCLUSIVE, not automatic violations. Gaps between snapshots limit what can be concluded.
 
-Inputs must come from the same cluster and a comparable run; the CLI cannot establish that provenance. Reports cover only the supplied histories.
+Within each verification run, inputs must come from the same cluster; comparison permits different clusters and release targets. The CLI cannot establish that provenance. Reports cover only the supplied histories.
 
 ## License
 

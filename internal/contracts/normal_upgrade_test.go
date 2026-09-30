@@ -98,7 +98,7 @@ func TestUpgradeContractPass(t *testing.T) {
 	}
 }
 
-func TestUpgradeContractFail(t *testing.T) {
+func TestUpgradeAdverseConditionsRemainInconclusive(t *testing.T) {
 	versions := loadContractVersions(t)
 
 	tests := []struct {
@@ -153,11 +153,11 @@ func TestUpgradeContractFail(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if report.Verdict != ContractFail {
+			if report.Verdict != ContractInconclusive {
 				t.Fatalf(
 					"verdict = %s, want %s",
 					report.Verdict,
-					ContractFail,
+					ContractInconclusive,
 				)
 			}
 
@@ -402,7 +402,7 @@ func testOperator(conditions ...configv1.ClusterOperatorStatusCondition) configv
 	return result
 }
 
-func TestContractEvidenceGapsAndFailurePrecedence(t *testing.T) {
+func TestContractEvidenceGapsAndAdverseConditions(t *testing.T) {
 	for _, gap := range []string{"ambiguous", "outside", "unknown phase", "missing condition"} {
 		for _, fail := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/fail=%v", gap, fail), func(t *testing.T) {
@@ -432,9 +432,6 @@ func TestContractEvidenceGapsAndFailurePrecedence(t *testing.T) {
 					t.Fatal(err)
 				}
 				want := ContractInconclusive
-				if fail {
-					want = ContractFail
-				}
 				if report.Verdict != want {
 					t.Fatalf("got %+v want %s", report, want)
 				}
@@ -456,7 +453,7 @@ func TestContractEvidenceGapsAndFailurePrecedence(t *testing.T) {
 	}
 }
 
-func TestBracketedFailureRetainsInterval(t *testing.T) {
+func TestBracketedAdverseConditionRetainsInterval(t *testing.T) {
 	versions := loadContractVersions(t)
 	second := versions[1]
 	second.ObservedAt = second.ObservedAt.Add(2 * time.Minute)
@@ -466,11 +463,55 @@ func TestBracketedFailureRetainsInterval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Verdict != ContractFail || len(report.Findings) != 1 {
+	if report.Verdict != ContractInconclusive || len(report.Findings) != 1 {
 		t.Fatalf("report: %+v", report)
 	}
 	f := report.Findings[0]
 	if f.Correlation != CorrelationBracketed || f.FromTime != versions[1].ObservedAt || f.ToTime != second.ObservedAt || f.ObservedAt != at {
 		t.Fatalf("evidence: %+v", f)
+	}
+}
+
+func TestAdverseConditionsWithoutDurationPolicy(t *testing.T) {
+	for _, condition := range []configv1.ClusterStatusConditionType{configv1.OperatorAvailable, configv1.OperatorDegraded} {
+		for _, recovered := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/recovered=%v", condition, recovered), func(t *testing.T) {
+				v := loadContractVersions(t)
+				late := v[1]
+				late.ClusterVersion = *late.ClusterVersion.DeepCopy()
+				late.ObservedAt = late.ObservedAt.Add(24 * time.Hour)
+				v = []upgrade.ClusterVersionObservation{v[0], v[1], late}
+				adverse := func(at time.Time) operator.Observation {
+					a, d := configv1.ConditionTrue, configv1.ConditionFalse
+					if condition == configv1.OperatorAvailable {
+						a = configv1.ConditionFalse
+					} else {
+						d = configv1.ConditionTrue
+					}
+					return contractObservation(at, a, configv1.ConditionTrue, d)
+				}
+				observations := []operator.Observation{adverse(v[1].ObservedAt), adverse(late.ObservedAt)}
+				if recovered {
+					observations[1] = contractObservation(late.ObservedAt, configv1.ConditionTrue, configv1.ConditionFalse, configv1.ConditionFalse)
+				}
+				report, err := VerifyNormalUpgradeOperatorConditions(v, observations)
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantFindings := 2
+				if recovered {
+					wantFindings = 1
+				}
+				if report.Verdict != ContractInconclusive || len(report.Findings) != wantFindings {
+					t.Fatalf("report=%+v", report)
+				}
+				output := NormalUpgradeResult(report)
+				for _, evidence := range output.Evidence {
+					if evidence.Verdict != ContractInconclusive || evidence.ObservedAt == nil || evidence.Attributes["condition"] != string(condition) {
+						t.Fatalf("unjustified evidence verdict: %+v", evidence)
+					}
+				}
+			})
+		}
 	}
 }

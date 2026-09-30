@@ -115,6 +115,12 @@ func (c cli) recordLive(args []string) int {
 	)
 
 	runErr := liveRecorder.Run(ctx)
+	stop()
+	if runErr == nil {
+		finalCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		runErr = liveRecorder.CaptureFinal(finalCtx)
+		cancel()
+	}
 
 	if runErr != nil {
 		finishErr := run.Finish(

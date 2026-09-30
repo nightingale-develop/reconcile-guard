@@ -88,10 +88,13 @@ func newLiveRecorder(
 }
 
 func (c *observationClock) Next(stream string) time.Time {
+	return c.Observe(stream, c.now())
+}
+
+func (c *observationClock) Observe(stream string, current time.Time) time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	current := c.now().UTC()
+	current = current.UTC()
 
 	if last := c.last[stream]; !current.After(last) {
 		current = last.Add(time.Nanosecond)
@@ -152,7 +155,8 @@ func (r *LiveRecorder) Run(parent context.Context) (runErr error) {
 			if ctx.Err() != nil {
 				return
 			}
-			if apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err) || apierrors.IsNotFound(err) {
+
+			if apierrors.IsForbidden(err) || (apierrors.IsUnauthorized(err) && !informer.HasSynced()) || apierrors.IsNotFound(err) {
 				fail(fmt.Errorf("watch %s: %w", resource.Resource, err))
 				return
 			}

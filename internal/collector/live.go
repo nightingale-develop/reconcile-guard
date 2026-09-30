@@ -70,33 +70,9 @@ func newLiveCollector(
 func (c *LiveCollector) Capture(
 	ctx context.Context,
 ) (Capture, error) {
-	versionObject, err := c.client.
-		Resource(clusterVersionResource).
-		Get(
-			ctx,
-			"version",
-			metav1.GetOptions{},
-		)
+	version, err := c.captureVersion(ctx)
 	if err != nil {
-		return Capture{}, fmt.Errorf(
-			"get ClusterVersion/version: %w",
-			err,
-		)
-	}
-
-	versionObservedAt := c.now().UTC()
-
-	var version configv1.ClusterVersion
-
-	if err := runtime.DefaultUnstructuredConverter.
-		FromUnstructured(
-			versionObject.Object,
-			&version,
-		); err != nil {
-		return Capture{}, fmt.Errorf(
-			"decode ClusterVersion/version: %w",
-			err,
-		)
+		return Capture{}, err
 	}
 
 	operatorList, err := c.client.
@@ -153,10 +129,40 @@ func (c *LiveCollector) Capture(
 	)
 
 	return Capture{
-		ClusterVersion: upgrade.ClusterVersionObservation{
-			ObservedAt:     versionObservedAt,
-			ClusterVersion: version,
-		},
-		Operators: observations,
+		ClusterVersion: version,
+		Operators:      observations,
 	}, nil
+}
+
+func (c *LiveCollector) captureVersion(ctx context.Context) (upgrade.ClusterVersionObservation, error) {
+	versionObject, err := c.client.
+		Resource(clusterVersionResource).
+		Get(
+			ctx,
+			"version",
+			metav1.GetOptions{},
+		)
+	if err != nil {
+		return upgrade.ClusterVersionObservation{}, fmt.Errorf(
+			"get ClusterVersion/version: %w",
+			err,
+		)
+	}
+
+	versionObservedAt := c.now().UTC()
+
+	var version configv1.ClusterVersion
+
+	if err := runtime.DefaultUnstructuredConverter.
+		FromUnstructured(
+			versionObject.Object,
+			&version,
+		); err != nil {
+		return upgrade.ClusterVersionObservation{}, fmt.Errorf(
+			"decode ClusterVersion/version: %w",
+			err,
+		)
+	}
+
+	return upgrade.ClusterVersionObservation{ObservedAt: versionObservedAt, ClusterVersion: version}, nil
 }

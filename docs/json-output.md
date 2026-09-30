@@ -77,3 +77,9 @@ FAIL→FAIL is `UNCHANGED`; any INCONCLUSIVE side prevents claiming regression
 for that contract. Exit codes remain `0`/`2`/`3` for comparison PASS/FAIL/INCONCLUSIVE
 and `1` for errors. CLI regression tests assert the literal schema version `"1"`
 and preserve both verification verdicts independently of the comparison.
+
+The JSON shape and `schemaVersion: "1"` are unchanged by the real-upgrade fixes.
+`normal-upgrade-operator-conditions` now reports adverse UPDATING observations
+as INCONCLUSIVE, including each corresponding `operator-condition` evidence
+verdict. Existing fields and counts remain. Recompute both runs with the same
+tool revision when comparing results from the former strict condition policy.

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -21,6 +22,11 @@ import (
 )
 
 func liveTestConfig(t *testing.T, beforeVersionList ...func()) string {
+	t.Helper()
+	return liveTestConfigWithHook(t, nil, beforeVersionList...)
+}
+
+func liveTestConfigWithHook(t *testing.T, hook func(http.ResponseWriter, *http.Request) bool, beforeVersionList ...func()) string {
 	t.Helper()
 	version := map[string]any{
 		"apiVersion": "config.openshift.io/v1", "kind": "ClusterVersion",
@@ -35,6 +41,9 @@ func liveTestConfig(t *testing.T, beforeVersionList ...func()) string {
 		if r.Method != http.MethodGet {
 			t.Errorf("unexpected API mutation: %s", r.Method)
 			http.Error(w, "read only", 405)
+			return
+		}
+		if hook != nil && hook(w, r) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -160,12 +169,44 @@ func TestRecordLiveSignalsAndWriteError(t *testing.T) {
 		name       string
 		signal     os.Signal
 		writeError bool
+		finalError string
 	}{
-		{"interrupt", os.Interrupt, false}, {"terminate", syscall.SIGTERM, false}, {"write error", nil, true},
+		{"interrupt", os.Interrupt, false, ""}, {"terminate", syscall.SIGTERM, false, ""}, {"write error", nil, true, ""},
+		{"final GET error", os.Interrupt, false, "get"}, {"final LIST error", syscall.SIGTERM, false, "list"},
+		{"final closing GET error", os.Interrupt, false, "closing"}, {"final write error", os.Interrupt, false, "write"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			config := liveTestConfig(t, func() {
+			var final atomic.Bool
+			var gets atomic.Int32
+			config := liveTestConfigWithHook(t, func(w http.ResponseWriter, r *http.Request) bool {
+				if !final.Load() || r.URL.Query().Get("watch") == "true" {
+					return false
+				}
+				isGet := strings.HasSuffix(r.URL.Path, "clusterversions/version")
+				if isGet {
+					gets.Add(1)
+				}
+				if (tc.finalError == "get" && isGet) || (tc.finalError == "list" && strings.HasSuffix(r.URL.Path, "clusteroperators")) || (tc.finalError == "closing" && isGet && gets.Load() == 2) {
+					http.Error(w, "final API unavailable", http.StatusServiceUnavailable)
+					return true
+				}
+				if tc.finalError == "write" && isGet && gets.Load() == 1 {
+					manifests, _ := filepath.Glob(filepath.Join(dir, "*", "run.json"))
+					if len(manifests) != 1 {
+						t.Error("missing run")
+						return false
+					}
+					path := filepath.Join(filepath.Dir(manifests[0]), "operators", "ingress.jsonl")
+					if err := os.Remove(path); err != nil {
+						t.Error(err)
+					}
+					if err := os.Mkdir(path, 0755); err != nil {
+						t.Error(err)
+					}
+				}
+				return false
+			}, func() {
 				if !tc.writeError {
 					return
 				}
@@ -211,6 +252,7 @@ func TestRecordLiveSignalsAndWriteError(t *testing.T) {
 					_ = cmd.Wait()
 					t.Fatalf("initial observations missing: stdout=%s stderr=%s", &out, &stderr)
 				}
+				final.Store(true)
 				if err := cmd.Process.Signal(tc.signal); err != nil {
 					cancel()
 					_ = cmd.Wait()
@@ -230,19 +272,23 @@ func TestRecordLiveSignalsAndWriteError(t *testing.T) {
 				t.Fatal(readErr)
 			}
 			wantStatus := recording.RunStatusStopped
-			if tc.writeError {
+			if tc.writeError || tc.finalError != "" {
 				wantStatus = recording.RunStatusFailed
 			}
 			if manifest.Status != wantStatus || manifest.EndedAt == nil || manifest.EndedAt.Before(manifest.StartedAt) {
 				t.Fatalf("incorrect final manifest: %+v", manifest)
 			}
-			if tc.writeError && manifest.Error == "" {
+			if (tc.writeError || tc.finalError != "") && manifest.Error == "" {
 				t.Fatal("failed run lost error")
 			}
 			if !tc.writeError && (len(manifest.Operators) != 1 || manifest.Operators[0] != "ingress") {
 				t.Fatalf("operator inventory=%v", manifest.Operators)
 			}
-			if tc.writeError {
+			if tc.finalError != "" {
+				if err == nil || cmd.ProcessState.ExitCode() != 1 || !strings.Contains(stderr.String(), "final snapshot") || strings.Contains(out.String(), "Recording stopped") {
+					t.Fatalf("final failure lost: exit=%v out=%s err=%s", err, &out, &stderr)
+				}
+			} else if tc.writeError {
 				if err == nil || cmd.ProcessState.ExitCode() != 1 || !strings.Contains(stderr.String(), "write ClusterVersion observation") {
 					t.Fatalf("exit=%v stdout=%s stderr=%s", err, &out, &stderr)
 				}
@@ -253,7 +299,23 @@ func TestRecordLiveSignalsAndWriteError(t *testing.T) {
 				if err != nil || stderr.Len() != 0 || !strings.Contains(out.String(), "Recording stopped") {
 					t.Fatalf("exit=%v stdout=%s stderr=%s", err, &out, &stderr)
 				}
-				assertLiveHistories(t, runDir, 1)
+				v, ve := upgrade.ReadHistory(filepath.Join(runDir, "cluster-version.jsonl"))
+				o, oe := operator.ReadHistory(filepath.Join(runDir, "operators", "ingress.jsonl"))
+				if ve != nil || oe != nil || len(v) != 3 || len(o) != 2 {
+					t.Fatalf("final capture missing: CV=%d CO=%d errors=%v %v", len(v), len(o), ve, oe)
+				}
+				if _, err := upgrade.AnalyzeHistory(v); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := operator.AnalyzeHistory(o); err != nil {
+					t.Fatal(err)
+				}
+				if !o[1].ObservedAt.After(v[1].ObservedAt) || !v[2].ObservedAt.After(o[1].ObservedAt) {
+					t.Fatal("final LIST lacks real CV bracket")
+				}
+				if o[0].Operator.ResourceVersion != o[1].Operator.ResourceVersion {
+					t.Fatal("test must retain unchanged resourceVersion")
+				}
 			}
 		})
 	}

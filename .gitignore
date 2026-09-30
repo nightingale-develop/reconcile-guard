@@ -39,3 +39,5 @@ Thumbs.db
 
 /capture/
 /runs/
+/reconnect-runs/
+/real-upgrade-runs/

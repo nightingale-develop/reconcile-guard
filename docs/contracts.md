@@ -19,15 +19,38 @@ BRACKETED is an inference from matching endpoints, not proof that no unobserved 
 
 ## Normal-upgrade conditions
 
-`normal-upgrade-operator-conditions` checks Available=True and Degraded=False only for samples correlated to UPDATING. The underlying normal-upgrade expectation is documented in the pinned [OpenShift condition definitions](https://github.com/openshift/api/blob/9abfa327cff2/config/v1/types_cluster_operator.go). Phase reconstruction also uses the pinned [ClusterVersion definitions](https://github.com/openshift/api/blob/9abfa327cff2/config/v1/types_cluster_version.go).
+`normal-upgrade-operator-conditions` is a conservative sampled-condition assessment,
+not a guarantee of uninterrupted availability during an upgrade. It inspects
+Available and Degraded only in confidently correlated UPDATING observations.
+The historical contract identifier is retained for artifact compatibility.
 
-- **FAIL**: an evaluated observation reports Available=False or Degraded=True. A concrete failure takes precedence over incomplete evidence elsewhere.
-- **INCONCLUSIVE**: no UPDATING samples, missing/Unknown required conditions, or ambiguous/outside/unknown-phase operator samples prevent a complete assessment of the supplied observations.
-- **PASS**: at least one UPDATING sample was evaluated, all required conditions satisfy the contract, and no evidence gaps above remain.
+- **PASS**: at least one UPDATING sample was evaluated, every evaluated sample
+  reports Available=True and Degraded=False, and there are no missing conditions
+  or ambiguous/outside/unknown-phase samples. This means no adverse condition
+  was observed in the assessed samples, not that the upgrade is healthy.
+- **INCONCLUSIVE**: an evaluated sample reports Available=False or Degraded=True,
+  or the evidence requirements above are not met. Later recovery does not turn
+  an adverse observation into PASS. Repeated or long-lived adverse snapshots
+  also remain INCONCLUSIVE without an applicable duration/recovery policy.
+- **FAIL**: this condition assessment currently cannot establish one from these
+  snapshots alone. No condition-duration policy is implemented here. Other
+  contracts still return FAIL for demonstrated violations, such as a reported
+  operator-version mismatch inside a completed-target window.
 
-PASS applies to this rule and these samples only. It does not certify the entire upgrade or unsampled intervals. The tool cannot establish that the environment met the assumptions of a normal upgrade, or determine whether an infrastructure incident caused a failure.
+The first user-run OKD 4.20 → 4.21 recording completed successfully but contained
+Available=False/Degraded=True observations during UPDATING. Treating each such
+sample as a lifecycle violation was too strong. The [OpenShift condition
+API definitions](https://github.com/openshift/api/blob/9abfa327cff2/config/v1/types_cluster_operator.go)
+describe the conditions and normal-upgrade expectations; they do not supply a
+universal duration allowance or identify the cause of an observed transient.
+This assessment does not infer cause, persistence between samples, or causality.
 
-Failure evidence includes the operator observation time, condition/status, reason/message, correlation kind and ClusterVersion interval endpoints. Preserve both input files to trace findings back to the original snapshots. The tool does not yet produce a self-contained evidence archive.
+Adverse-condition evidence retains observation time, status, reason/message,
+correlation and CV interval endpoints. Its JSON `verdict` is INCONCLUSIVE, not
+FAIL. Missing or ambiguous observations remain conservative. Preserve both input
+histories; reports are not self-contained evidence archives. Compare old and new
+runs using the same tool revision: unchanged JSON schema does not make the former
+strict condition policy equivalent to this revised assessment.
 
 ## Progressing duration during upgrades
 
@@ -55,13 +78,19 @@ After upgrade completion, the reported operator version must match the completed
 
 A window starts at a reconstructed COMPLETED observation and extends through consecutive STABLE observations with the same desired target version and image. A target-version or target-image change closes the window; its endpoints are inclusive and samples outside these windows are ignored. No completed target, no evaluated versions, a missing target/version or a window without operator observations makes an otherwise passing result INCONCLUSIVE. A mismatch takes precedence and yields FAIL. Duplicate `operator` version entries in an evaluated sample are input errors. Comparison uses exact version strings.
 
+Graceful `record-live` shutdown supplies fresh operator observations between two
+fresh ClusterVersion reads. An unchanged operator resourceVersion is valid new
+temporal evidence when re-read after completion. Ordinary WATCH events remain
+deduplicated. Without post-completion evidence, old artifacts stay INCONCLUSIVE;
+no synthetic timestamp or last-value carry-forward is added by analysis.
+
 This is the implemented rule in [VerifyOperatorVersionConsistency](../internal/contracts/version_consistency.go). The window extension checks phase, desired version and image; it has no maximum sampling-gap policy. It does not prove state outside the supplied observations or physical continuity between them.
 
 With asynchronous observation streams, even a successful real upgrade may remain
 INCONCLUSIVE when target/image boundaries, generations or operator observations
-cannot be aligned. The tool does not extrapolate beyond recorded windows or resnapshot
-automatically; this behavior is not a claim that a real upgrade has been
-validated.
+cannot be aligned. The tool does not extrapolate beyond recorded windows; graceful shutdown
+now performs a fresh final snapshot bracket; these limitations remain even though two real OKD upgrades have now been
+exercised (see the [validation record](real-upgrade-validation.md)).
 
 ## Multi-operator upgrade report
 

@@ -1,8 +1,26 @@
 # Real upgrade validation
 
-Status: **pending a user-executed real upgrade**. Synthetic tests and fake
-LIST/WATCH tests do not establish real OpenShift/OKD upgrade or reconnect
-validation. ReconcileGuard only reads the API; the administrator starts upgrades.
+Status: **two real OKD upgrade runs completed**, reported by the operator of
+the test environment. This release-prep audit did not initiate upgrades or
+contact clusters. ReconcileGuard remains read-only.
+
+| Run | Target selection | Observed outcome |
+| --- | --- | --- |
+| OKD 4.20 → 4.21 | Forced/unverified target; not a normal recommended graph upgrade | CV completion at 2026-09-30T15:15:21Z. Missing post-completion CO observations caused version consistency 1 PASS / 33 INCONCLUSIVE. The former strict conditions policy produced 14 FAIL / 20 INCONCLUSIVE and exposed an overly strong inference from adverse snapshots. |
+| OKD 4.21 → 4.22 | Normal graph-provided target | `status=stopped`, 34 recorded operators, version consistency PASS 34/34. Every operator had `completedTargets=1`, `evaluatedSamples=1`, `uncoveredTargets=0`. Fresh shutdown GET CV → LIST CO → GET CV was validated on the real API. |
+
+The second run retained transient adverse conditions as evidence and left the
+condition assessment INCONCLUSIVE where evidence did not establish a violation;
+it did not produce the former automatic condition FAILs. Temporary CNI/API
+disruptions occurred and the upgrade subsequently completed. This temporal
+association does not establish root cause, causality or an OpenShift bug.
+
+A separate CRC/OpenShift Local stop/start exercise validated recovery after API
+disappearance, reconnect/relist and transient Unauthorized after successful
+startup. Initial Unauthorized and Forbidden remain fatal. Synthetic tests
+separately cover expired-resourceVersion relist; real reconnect is not proof
+that real resourceVersion expiry was exercised. Neither validation level proves
+lossless event delivery or covers every disconnect scenario.
 
 Use an existing OKD/OpenShift test cluster with a recommended update path and
 the matching `oc` client. Follow the prerequisites for your installed release:
@@ -31,9 +49,10 @@ conditions, plus ClusterVersion failure messages. A single condition is not a
 complete health check. Select a recommended target from `oc adm upgrade`; do
 not force an unsupported update for this test.
 
-The recorder identity needs read-only LIST/WATCH access:
+The recorder identity needs read-only LIST/WATCH and final GET access:
 
 ```sh
+oc auth can-i get clusterversions.config.openshift.io/version
 oc auth can-i list clusterversions.config.openshift.io
 oc auth can-i watch clusterversions.config.openshift.io
 oc auth can-i list clusteroperators.config.openshift.io
@@ -89,7 +108,12 @@ versions/conditions and cluster health. Progressing=False alone can describe
 the old stable state before the request is processed. Follow release-specific
 completion checks for nodes and machine config pools as well.
 
-Keep recording through post-completion observations, then Ctrl+C in terminal A:
+After confirming completion, Ctrl+C in terminal A. Wait for the final snapshot:
+WATCH workers stop, fresh GET CV → LIST CO → GET CV observations are written,
+and only then is `run.json` finalized as stopped. The last CV GET provides a real
+upper bound for the operator LIST, preserving version/image boundary checks.
+The final API context has a 30-second timeout; any final API/write error yields
+exit 1 and a failed run. Keep API access available while stopping.
 
 ```sh
 echo $?  # immediately after record-live: expect 0
@@ -127,19 +151,31 @@ STABLE → UPDATING → COMPLETED → STABLE are analytical phases, not API cond
 Missing or contradictory evidence remains UNKNOWN/INCONCLUSIVE.
 
 The [ClusterOperator API](https://github.com/openshift/api/blob/release-4.20/config/v1/types_cluster_operator.go)
-allows Progressing during rollout. An evaluated Degraded=True violates the
-normal-upgrade contract even if it later clears. `versions[name=operator]`
+allows Progressing during rollout. Available=False or Degraded=True in an
+UPDATING sample is retained as evidence and makes the condition assessment
+INCONCLUSIVE; neither recovery nor a long sampled duration alone establishes
+a lifecycle violation or PASS without an applicable policy. `versions[name=operator]`
 tracks operand rollout; it may change before global completion. A first recorded
 new version after completion can be delivery timing, not actual update order.
 
 Independent WATCH streams have different local `observedAt` times. Phase/target
 boundaries, stale generations and observations outside the CV timeline can
 make a successful real upgrade INCONCLUSIVE. No last-value extrapolation is
-performed. Recording longer does not force new snapshots: unchanged objects
-are deduplicated. A post-completion version check needs operator evidence within
-the recorded completion/stable window. Do not edit timestamps, inject duplicate
-snapshots or weaken contracts to manufacture PASS.
+performed. During WATCH, unchanged resourceVersions are deduplicated. Graceful
+shutdown deliberately re-reads unchanged objects with fresh local observedAt;
+this is new temporal evidence, not a fabricated watch event. A post-completion
+version check needs operator evidence inside the recorded completion/stable
+window; the final CV bracket supplies it only when phase and target are coherent.
+Existing artifacts remain readable, but missing final observations cannot be
+reconstructed retroactively. Do not edit old timestamps or append guessed state.
 
-This exercise does not by itself validate disconnect, expired-resourceVersion
-recovery or lossless event delivery. Client-go handles LIST/WATCH renewal and
-resourceVersion recovery; real fault scenarios remain a separate validation.
+Before the next upgrade, rebuild and check GET permission. After stopping,
+inspect the last two CV lines and final operator lines as well as run status.
+Re-run baseline and candidate with the same revision. Missing/ambiguous phase
+coverage, target changes during final reads, clock skew and API failure during
+shutdown may still produce INCONCLUSIVE or a failed recording. A clean shutdown
+does not establish complete cluster coverage or make conditions PASS.
+
+Client-go handles LIST/WATCH renewal and resourceVersion recovery. The real
+CRC reconnect exercise and synthetic expired-resourceVersion tests above are
+distinct evidence. Broader fault coverage remains post-v0.1.0 work.

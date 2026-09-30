@@ -20,7 +20,7 @@ func NormalUpgradeResult(
 			evidence,
 			result.Evidence{
 				Kind:        "operator-condition",
-				Verdict:     ContractFail,
+				Verdict:     ContractInconclusive,
 				ObservedAt:  resultTime(finding.ObservedAt),
 				From:        resultTime(finding.FromTime),
 				To:          resultTime(finding.ToTime),

@@ -33,7 +33,7 @@ func TestSyntheticUpgradeLifecycle(t *testing.T) {
 		}, ContractPass, ContractPass},
 		{"temporary degraded recovers", func(v []upgrade.ClusterVersionObservation, o []operator.Observation) {
 			o[1].Operator.Status.Conditions[2].Status = configv1.ConditionTrue
-		}, ContractFail, ContractPass},
+		}, ContractInconclusive, ContractPass},
 		{"old operator after completion", func(v []upgrade.ClusterVersionObservation, o []operator.Observation) {
 			o[2].Operator.Status.Versions[0].Version = "4.19.0"
 		}, ContractPass, ContractFail},
@@ -78,7 +78,7 @@ func TestSyntheticUpgradeLifecycle(t *testing.T) {
 				t.Fatalf("conditions=%+v version=%+v", got.Conditions, got.Version)
 			}
 			if tc.name == "temporary degraded recovers" && (len(got.Conditions.Findings) != 1 || got.Conditions.Findings[0].Condition != configv1.OperatorDegraded) {
-				t.Fatalf("lost transient failure: %+v", got.Conditions)
+				t.Fatalf("lost transient condition evidence: %+v", got.Conditions)
 			}
 		})
 	}

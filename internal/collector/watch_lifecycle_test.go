@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -353,5 +354,107 @@ func TestLiveRecorderExpiredWatchRelists(t *testing.T) {
 	}
 	if v, o := sink.counts(); v != 1 || o != 2 || sink.operators[1].Operator.ResourceVersion != "2" {
 		t.Fatal("relist did not record the new version exactly once")
+	}
+}
+
+func TestLiveRecorderUnauthorizedRecovery(t *testing.T) {
+	for _, resource := range []string{"clusterversions", "clusteroperators"} {
+		for _, stage := range []string{"watch event", "watch request", "relist"} {
+			t.Run(resource+"/"+stage, func(t *testing.T) {
+				client := liveClient(t, liveObject("ClusterVersion", "version", "1"), liveObject("ClusterOperator", "ingress", "1"))
+				streams := watchStream(client, resource)
+				var reject atomic.Bool
+				unauthorized := apierrors.NewUnauthorized("authentication temporarily unavailable")
+				if stage == "relist" {
+					client.PrependReactor("list", resource, func(clienttesting.Action) (bool, runtime.Object, error) {
+						if reject.Swap(false) {
+							return true, nil, unauthorized
+						}
+						return false, nil, nil
+					})
+				}
+				if stage == "watch request" {
+					client.PrependWatchReactor(resource, func(clienttesting.Action) (bool, watch.Interface, error) {
+						if reject.Swap(false) {
+							return true, nil, unauthorized
+						}
+						return false, nil, nil
+					})
+				}
+				sink := &memorySink{}
+				cancel, done := startRecording(t, client, sink)
+				w := nextWatch(t, streams)
+				waitForCounts(t, sink, 1, 1)
+				switch stage {
+				case "watch event":
+					w.Error(&unauthorized.ErrStatus)
+				case "watch request":
+					reject.Store(true)
+					w.Stop()
+				case "relist":
+					reject.Store(true)
+					w.Error(&metav1.Status{Status: metav1.StatusFailure, Reason: metav1.StatusReasonExpired, Code: 410, Message: "expired"})
+				}
+				w = nextWatch(t, streams)
+				if reject.Load() {
+					t.Fatal("Unauthorized reactor not exercised")
+				}
+				if resource == "clusterversions" {
+					w.Modify(liveObject("ClusterVersion", "version", "2"))
+					waitForCounts(t, sink, 2, 1)
+				} else {
+					w.Modify(liveObject("ClusterOperator", "ingress", "2"))
+					waitForCounts(t, sink, 1, 2)
+				}
+				cancel()
+				if err := recordingResult(t, done); err != nil {
+					t.Fatal(err)
+				}
+				if resource == "clusterversions" {
+					if sink.versions[len(sink.versions)-1].ClusterVersion.ResourceVersion != "2" {
+						t.Fatal("recovery event lost")
+					}
+				} else {
+					if sink.operators[len(sink.operators)-1].Operator.ResourceVersion != "2" {
+						t.Fatal("recovery event lost")
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestLiveRecorderUnauthorizedInitiallyFatal(t *testing.T) {
+	for _, resource := range []string{"clusterversions", "clusteroperators"} {
+		t.Run(resource, func(t *testing.T) {
+			client := liveClient(t, liveObject("ClusterVersion", "version", "1"), liveObject("ClusterOperator", "ingress", "1"))
+			client.PrependReactor("list", resource, func(clienttesting.Action) (bool, runtime.Object, error) {
+				return true, nil, apierrors.NewUnauthorized("invalid credentials")
+			})
+			_, done := startRecording(t, client, &memorySink{})
+			if err := recordingResult(t, done); !apierrors.IsUnauthorized(err) {
+				t.Fatalf("error=%v", err)
+			}
+		})
+	}
+}
+
+func TestLiveRecorderForbiddenAfterSyncFatal(t *testing.T) {
+	for _, resource := range []string{"clusterversions", "clusteroperators"} {
+		t.Run(resource, func(t *testing.T) {
+			client := liveClient(t, liveObject("ClusterVersion", "version", "1"), liveObject("ClusterOperator", "ingress", "1"))
+			streams := watchStream(client, resource)
+			sink := &memorySink{}
+			_, done := startRecording(t, client, sink)
+			w := nextWatch(t, streams)
+			waitForCounts(t, sink, 1, 1)
+			client.PrependWatchReactor(resource, func(clienttesting.Action) (bool, watch.Interface, error) {
+				return true, nil, apierrors.NewForbidden(clusterOperatorResource.GroupResource(), "", errors.New("denied"))
+			})
+			w.Stop()
+			if err := recordingResult(t, done); !apierrors.IsForbidden(err) {
+				t.Fatalf("error=%v", err)
+			}
+		})
 	}
 }
