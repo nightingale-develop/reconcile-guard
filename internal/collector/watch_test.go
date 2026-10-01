@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"k8s.io/apimachinery/pkg/runtime"
 	"reflect"
 	"sync"
 	"testing"
@@ -9,17 +10,19 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	"github.com/nightingale-develop/reconcile-guard/internal/machineconfig"
+	nodehistory "github.com/nightingale-develop/reconcile-guard/internal/node"
 	"github.com/nightingale-develop/reconcile-guard/internal/operator"
 	"github.com/nightingale-develop/reconcile-guard/internal/upgrade"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/dynamic/fake"
 )
 
 type memorySink struct {
 	mu        sync.Mutex
+	pools     []machineconfig.Observation
+	nodes     []nodehistory.Observation
 	versions  []upgrade.ClusterVersionObservation
 	operators []operator.Observation
 }
@@ -62,12 +65,6 @@ func (s *memorySink) counts() (int, int) {
 func TestLiveRecorderRecordsInitialStateAndUpdate(
 	t *testing.T,
 ) {
-	scheme := runtime.NewScheme()
-
-	if err := configv1.Install(scheme); err != nil {
-		t.Fatal(err)
-	}
-
 	version := &configv1.ClusterVersion{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            "version",
@@ -94,8 +91,8 @@ func TestLiveRecorderRecordsInitialStateAndUpdate(
 		Kind:       "ClusterOperator",
 	}
 
-	client := fake.NewSimpleDynamicClient(
-		scheme,
+	client := liveClient(
+		t,
 		version,
 		ingress,
 	)
@@ -307,4 +304,17 @@ func TestLiveRecorderPreservesUpgradeFields(t *testing.T) {
 			t.Fatalf("wrong operator capture timestamp: %v", got.ObservedAt)
 		}
 	}
+}
+
+func (s *memorySink) AppendMachineConfigPool(o machineconfig.Observation) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pools = append(s.pools, o)
+	return nil
+}
+func (s *memorySink) AppendNode(o nodehistory.Observation) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nodes = append(s.nodes, o)
+	return nil
 }

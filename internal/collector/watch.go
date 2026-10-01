@@ -6,10 +6,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nightingale-develop/reconcile-guard/internal/machineconfig"
 	"github.com/nightingale-develop/reconcile-guard/internal/operator"
 	"github.com/nightingale-develop/reconcile-guard/internal/upgrade"
 	configv1 "github.com/openshift/api/config/v1"
 
+	nodehistory "github.com/nightingale-develop/reconcile-guard/internal/node"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -20,6 +22,9 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+
+	machineconfigv1 "github.com/openshift/api/machineconfiguration/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 type ObservationSink interface {
@@ -30,6 +35,8 @@ type ObservationSink interface {
 	AppendOperator(
 		operator.Observation,
 	) error
+	AppendMachineConfigPool(machineconfig.Observation) error
+	AppendNode(nodehistory.Observation) error
 }
 
 type LiveRecorder struct {
@@ -106,68 +113,170 @@ func (c *observationClock) Observe(stream string, current time.Time) time.Time {
 
 func (r *LiveRecorder) Run(parent context.Context) (runErr error) {
 	ctx, cancel := context.WithCancel(parent)
+
 	var workers sync.WaitGroup
+
 	errCh := make(chan error, 1)
+
 	var failOnce sync.Once
+
 	fail := func(err error) {
-		failOnce.Do(func() { errCh <- err; cancel() })
+		failOnce.Do(func() {
+			errCh <- err
+			cancel()
+		})
 	}
+
 	defer func() {
 		cancel()
 		workers.Wait()
+
 		if err := pendingError(errCh); err != nil {
 			runErr = err
 		}
 	}()
+
 	if ctx.Err() != nil {
 		return nil
 	}
 
-	for _, resource := range []schema.GroupVersionResource{clusterVersionResource, clusterOperatorResource} {
-		informer := r.newInformer(resource, fail)
-		record := r.recordOperator
+	resources := []schema.GroupVersionResource{
+		clusterVersionResource,
+		clusterOperatorResource,
+		machineConfigPoolResource,
+		nodeResource,
+	}
+
+	for _, resource := range resources {
+		resource := resource
+
+		informer := r.newInformer(
+			resource,
+			fail,
+		)
+
+		var record func(any, func(error))
 		var deleted func(any)
-		if resource == clusterVersionResource {
+
+		switch resource {
+		case clusterVersionResource:
 			record = r.recordVersion
+
 			deleted = func(obj any) {
 				if objectName(obj) == "version" {
-					fail(fmt.Errorf("ClusterVersion/version was deleted"))
+					fail(
+						fmt.Errorf(
+							"ClusterVersion/version was deleted",
+						),
+					)
 				}
-			}
-		}
-		_, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj any) {
-				if ctx.Err() == nil {
-					record(obj, fail)
-				}
-			},
-			UpdateFunc: func(oldObj, newObj any) {
-				if ctx.Err() == nil && !sameResourceVersion(oldObj, newObj) {
-					record(newObj, fail)
-				}
-			},
-			DeleteFunc: deleted,
-		})
-		if err != nil {
-			return fmt.Errorf("register %s handler: %w", resource.Resource, err)
-		}
-		if err := informer.SetWatchErrorHandlerWithContext(func(ctx context.Context, reflector *cache.Reflector, err error) {
-			if ctx.Err() != nil {
-				return
 			}
 
-			if apierrors.IsForbidden(err) || (apierrors.IsUnauthorized(err) && !informer.HasSynced()) || apierrors.IsNotFound(err) {
-				fail(fmt.Errorf("watch %s: %w", resource.Resource, err))
-				return
-			}
-			cache.DefaultWatchErrorHandler(ctx, reflector, err)
-		}); err != nil {
-			return err
+		case clusterOperatorResource:
+			record = r.recordOperator
+
+		case machineConfigPoolResource:
+			record = r.recordMachineConfigPool
+
+		case nodeResource:
+			record = r.recordNode
+
+		default:
+			return fmt.Errorf(
+				"unsupported live resource %s",
+				resource.Resource,
+			)
 		}
+
+		_, err := informer.AddEventHandler(
+			cache.ResourceEventHandlerFuncs{
+				AddFunc: func(obj any) {
+					if ctx.Err() == nil {
+						record(
+							obj,
+							fail,
+						)
+					}
+				},
+
+				UpdateFunc: func(
+					oldObj any,
+					newObj any,
+				) {
+					if ctx.Err() == nil &&
+						!sameResourceVersion(
+							oldObj,
+							newObj,
+						) {
+						record(
+							newObj,
+							fail,
+						)
+					}
+				},
+
+				DeleteFunc: deleted,
+			},
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"register %s handler: %w",
+				resource.Resource,
+				err,
+			)
+		}
+
+		if err := informer.
+			SetWatchErrorHandlerWithContext(
+				func(
+					ctx context.Context,
+					reflector *cache.Reflector,
+					err error,
+				) {
+					if ctx.Err() != nil {
+						return
+					}
+
+					if apierrors.IsForbidden(err) ||
+						(apierrors.IsUnauthorized(err) &&
+							!informer.HasSynced()) ||
+						apierrors.IsNotFound(err) {
+						fail(
+							fmt.Errorf(
+								"watch %s: %w",
+								resource.Resource,
+								err,
+							),
+						)
+
+						return
+					}
+
+					cache.DefaultWatchErrorHandler(
+						ctx,
+						reflector,
+						err,
+					)
+				},
+			); err != nil {
+			return fmt.Errorf(
+				"set %s watch error handler: %w",
+				resource.Resource,
+				err,
+			)
+		}
+
 		workers.Add(1)
-		go func() { defer workers.Done(); informer.RunWithContext(ctx) }()
+
+		go func() {
+			defer workers.Done()
+
+			informer.RunWithContext(ctx)
+		}()
 	}
+
 	<-ctx.Done()
+
 	return nil
 }
 
@@ -350,5 +459,114 @@ func pendingError(
 
 	default:
 		return nil
+	}
+}
+
+func (r *LiveRecorder) recordMachineConfigPool(
+	obj any,
+	fail func(error),
+) {
+	value, ok := obj.(*unstructured.Unstructured)
+	if !ok || value == nil {
+		fail(fmt.Errorf(
+			"unexpected MachineConfigPool object %T",
+			obj,
+		))
+		return
+	}
+
+	if value.GetAPIVersion() !=
+		"machineconfiguration.openshift.io/v1" ||
+		value.GetKind() != "MachineConfigPool" ||
+		value.GetName() == "" {
+		fail(fmt.Errorf(
+			"unexpected MachineConfigPool resource %s/%s name=%q",
+			value.GetAPIVersion(),
+			value.GetKind(),
+			value.GetName(),
+		))
+		return
+	}
+
+	var pool machineconfigv1.MachineConfigPool
+
+	if err := runtime.DefaultUnstructuredConverter.
+		FromUnstructured(
+			value.Object,
+			&pool,
+		); err != nil {
+		fail(fmt.Errorf(
+			"decode MachineConfigPool %q: %w",
+			value.GetName(),
+			err,
+		))
+		return
+	}
+
+	observation := machineconfig.Observation{
+		ObservedAt: r.clock.Next(
+			"machineconfigpool/" + pool.Name,
+		),
+		Pool: pool,
+	}
+
+	if err := r.sink.AppendMachineConfigPool(
+		observation,
+	); err != nil {
+		fail(err)
+	}
+}
+
+func (r *LiveRecorder) recordNode(
+	obj any,
+	fail func(error),
+) {
+	value, ok := obj.(*unstructured.Unstructured)
+	if !ok || value == nil {
+		fail(fmt.Errorf(
+			"unexpected Node object %T",
+			obj,
+		))
+		return
+	}
+
+	if value.GetAPIVersion() != "v1" ||
+		value.GetKind() != "Node" ||
+		value.GetName() == "" {
+		fail(fmt.Errorf(
+			"unexpected Node resource %s/%s name=%q",
+			value.GetAPIVersion(),
+			value.GetKind(),
+			value.GetName(),
+		))
+		return
+	}
+
+	var node corev1.Node
+
+	if err := runtime.DefaultUnstructuredConverter.
+		FromUnstructured(
+			value.Object,
+			&node,
+		); err != nil {
+		fail(fmt.Errorf(
+			"decode Node %q: %w",
+			value.GetName(),
+			err,
+		))
+		return
+	}
+
+	observation := nodehistory.Observation{
+		ObservedAt: r.clock.Next(
+			"node/" + node.Name,
+		),
+		Node: node,
+	}
+
+	if err := r.sink.AppendNode(
+		observation,
+	); err != nil {
+		fail(err)
 	}
 }

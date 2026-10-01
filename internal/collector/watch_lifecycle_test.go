@@ -8,13 +8,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nightingale-develop/reconcile-guard/internal/machineconfig"
+	nodehistory "github.com/nightingale-develop/reconcile-guard/internal/node"
 	"github.com/nightingale-develop/reconcile-guard/internal/operator"
 	"github.com/nightingale-develop/reconcile-guard/internal/upgrade"
-	configv1 "github.com/openshift/api/config/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic/fake"
 	clienttesting "k8s.io/client-go/testing"
@@ -27,13 +29,53 @@ func liveObject(kind, name, rv string) *unstructured.Unstructured {
 	}}
 }
 
-func liveClient(t *testing.T, objects ...runtime.Object) *fake.FakeDynamicClient {
+func liveClient(
+	t *testing.T,
+	objects ...runtime.Object,
+) *fake.FakeDynamicClient {
 	t.Helper()
-	scheme := runtime.NewScheme()
-	if err := configv1.Install(scheme); err != nil {
-		t.Fatal(err)
+
+	unstructuredObjects := make(
+		[]runtime.Object,
+		0,
+		len(objects),
+	)
+
+	for _, object := range objects {
+		if value, ok := object.(*unstructured.Unstructured); ok {
+			unstructuredObjects = append(
+				unstructuredObjects,
+				value,
+			)
+			continue
+		}
+
+		data, err :=
+			runtime.DefaultUnstructuredConverter.
+				ToUnstructured(object)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		unstructuredObjects = append(
+			unstructuredObjects,
+			&unstructured.Unstructured{
+				Object: data,
+			},
+		)
 	}
-	return fake.NewSimpleDynamicClient(scheme, objects...)
+
+	return fake.
+		NewSimpleDynamicClientWithCustomListKinds(
+			runtime.NewScheme(),
+			map[schema.GroupVersionResource]string{
+				clusterVersionResource:    "ClusterVersionList",
+				clusterOperatorResource:   "ClusterOperatorList",
+				machineConfigPoolResource: "MachineConfigPoolList",
+				nodeResource:              "NodeList",
+			},
+			unstructuredObjects...,
+		)
 }
 
 func startRecording(t *testing.T, client *fake.FakeDynamicClient, sink ObservationSink) (context.CancelFunc, <-chan error) {
@@ -458,3 +500,8 @@ func TestLiveRecorderForbiddenAfterSyncFatal(t *testing.T) {
 		})
 	}
 }
+
+func (s failingSink) AppendMachineConfigPool(machineconfig.Observation) error     { return s.err }
+func (s failingSink) AppendNode(nodehistory.Observation) error                    { return s.err }
+func (*delayedErrorSink) AppendMachineConfigPool(machineconfig.Observation) error { return nil }
+func (*delayedErrorSink) AppendNode(nodehistory.Observation) error                { return nil }

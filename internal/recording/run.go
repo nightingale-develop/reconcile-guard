@@ -27,8 +27,10 @@ type RunSource struct {
 }
 
 type RunFiles struct {
-	ClusterVersion     string `json:"clusterVersion"`
-	OperatorsDirectory string `json:"operatorsDirectory"`
+	ClusterVersion              string `json:"clusterVersion"`
+	OperatorsDirectory          string `json:"operatorsDirectory"`
+	MachineConfigPoolsDirectory string `json:"machineConfigPoolsDirectory,omitempty"`
+	NodesDirectory              string `json:"nodesDirectory,omitempty"`
 }
 
 type RunManifest struct {
@@ -40,9 +42,11 @@ type RunManifest struct {
 	ToolVersion   string     `json:"toolVersion"`
 	Command       string     `json:"command"`
 
-	Source    RunSource `json:"source"`
-	Files     RunFiles  `json:"files"`
-	Operators []string  `json:"operators,omitempty"`
+	Source             RunSource `json:"source"`
+	Files              RunFiles  `json:"files"`
+	Operators          []string  `json:"operators,omitempty"`
+	MachineConfigPools []string  `json:"machineConfigPools,omitempty"`
+	Nodes              []string  `json:"nodes,omitempty"`
 
 	Error string `json:"error,omitempty"`
 }
@@ -54,8 +58,10 @@ type Run struct {
 }
 
 type RunSnapshot struct {
-	ClusterID string
-	Operators []string
+	ClusterID          string
+	Operators          []string
+	MachineConfigPools []string
+	Nodes              []string
 }
 
 func StartRun(
@@ -127,8 +133,10 @@ func StartRunForCommand(parentDirectory, toolVersion, server string, startedAt t
 				Server: server,
 			},
 			Files: RunFiles{
-				ClusterVersion:     "cluster-version.jsonl",
-				OperatorsDirectory: "operators",
+				ClusterVersion:              "cluster-version.jsonl",
+				OperatorsDirectory:          "operators",
+				MachineConfigPoolsDirectory: "machine-config-pools",
+				NodesDirectory:              "nodes",
 			},
 		},
 	}
@@ -151,6 +159,8 @@ func (r *Run) Manifest() RunManifest {
 
 	manifest := r.manifest
 	manifest.Operators = slices.Clone(manifest.Operators)
+	manifest.MachineConfigPools = slices.Clone(manifest.MachineConfigPools)
+	manifest.Nodes = slices.Clone(manifest.Nodes)
 	if manifest.EndedAt != nil {
 		endedAt := *manifest.EndedAt
 		manifest.EndedAt = &endedAt
@@ -181,6 +191,19 @@ func (r *Run) Finish(
 
 	sort.Strings(operators)
 
+	machineConfigPools := append(
+		[]string(nil),
+		snapshot.MachineConfigPools...,
+	)
+
+	nodes := append(
+		[]string(nil),
+		snapshot.Nodes...,
+	)
+
+	sort.Strings(machineConfigPools)
+	sort.Strings(nodes)
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.manifest.Status != RunStatusRecording {
@@ -199,6 +222,9 @@ func (r *Run) Finish(
 	r.manifest.Source.ClusterID =
 		snapshot.ClusterID
 	r.manifest.Operators = operators
+
+	r.manifest.MachineConfigPools = machineConfigPools
+	r.manifest.Nodes = nodes
 
 	if runErr != nil {
 		r.manifest.Error = runErr.Error()
@@ -340,9 +366,32 @@ func validateRunManifest(manifest RunManifest) error {
 	default:
 		return fmt.Errorf("invalid run status %q", manifest.Status)
 	}
-	for _, path := range []string{manifest.Files.ClusterVersion, manifest.Files.OperatorsDirectory} {
-		if !filepath.IsLocal(path) || filepath.Clean(path) == "." {
-			return fmt.Errorf("run file path must be relative and stay inside the run directory: %q", path)
+	paths := []string{
+		manifest.Files.ClusterVersion,
+		manifest.Files.OperatorsDirectory,
+	}
+
+	if manifest.Files.MachineConfigPoolsDirectory != "" {
+		paths = append(
+			paths,
+			manifest.Files.MachineConfigPoolsDirectory,
+		)
+	}
+
+	if manifest.Files.NodesDirectory != "" {
+		paths = append(
+			paths,
+			manifest.Files.NodesDirectory,
+		)
+	}
+
+	for _, path := range paths {
+		if !filepath.IsLocal(path) ||
+			filepath.Clean(path) == "." {
+			return fmt.Errorf(
+				"run file path must be relative and stay inside the run directory: %q",
+				path,
+			)
 		}
 	}
 	seen := make(map[string]bool, len(manifest.Operators))
@@ -354,6 +403,36 @@ func validateRunManifest(manifest RunManifest) error {
 			return fmt.Errorf("duplicate operator %q in run manifest", name)
 		}
 		seen[name] = true
+	}
+
+	for label, names := range map[string][]string{
+		"MachineConfigPool": manifest.MachineConfigPools,
+		"Node":              manifest.Nodes,
+	} {
+		seen := make(map[string]bool, len(names))
+
+		for _, name := range names {
+			if name == "" ||
+				name == "." ||
+				name == ".." ||
+				filepath.Base(name) != name {
+				return fmt.Errorf(
+					"invalid %s name %q in run manifest",
+					label,
+					name,
+				)
+			}
+
+			if seen[name] {
+				return fmt.Errorf(
+					"duplicate %s %q in run manifest",
+					label,
+					name,
+				)
+			}
+
+			seen[name] = true
+		}
 	}
 	return nil
 }

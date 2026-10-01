@@ -299,6 +299,12 @@ func TestReadRunManifestValidation(t *testing.T) {
 		{"empty path", "path", func(m *RunManifest) { m.Files.ClusterVersion = "" }},
 		{"duplicate operator", "duplicate", func(m *RunManifest) { m.Operators = []string{"ingress", "ingress"} }},
 		{"operator name escape", "operator", func(m *RunManifest) { m.Operators = []string{"../ingress"} }},
+		{"MCP path escape", "path", func(m *RunManifest) { m.Files.MachineConfigPoolsDirectory = "../pools" }},
+		{"Node absolute path", "path", func(m *RunManifest) { m.Files.NodesDirectory = "/tmp/nodes" }},
+		{"duplicate MCP", "duplicate", func(m *RunManifest) { m.MachineConfigPools = []string{"worker", "worker"} }},
+		{"duplicate Node", "duplicate", func(m *RunManifest) { m.Nodes = []string{"node-0", "node-0"} }},
+		{"MCP name escape", "MachineConfigPool", func(m *RunManifest) { m.MachineConfigPools = []string{"../worker"} }},
+		{"Node name escape", "Node", func(m *RunManifest) { m.Nodes = []string{"../node-0"} }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			start := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)

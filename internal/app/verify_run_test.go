@@ -116,6 +116,20 @@ func TestVerifyRunVerdicts(t *testing.T) {
 	}
 }
 
+func TestVerifyLegacyRunWithoutAuxiliaryFields(t *testing.T) {
+	directory := verifyRunFixture(t)
+	changeRunManifest(t, directory, func(m *recording.RunManifest) {
+		m.Files.MachineConfigPoolsDirectory, m.Files.NodesDirectory = "", ""
+		m.MachineConfigPools, m.Nodes = nil, nil
+	})
+	for _, format := range []string{"text", "json"} {
+		var out, stderr bytes.Buffer
+		if code := Run([]string{"verify-run", directory, "--output", format}, &out, &stderr); code != 0 || stderr.Len() != 0 {
+			t.Fatalf("legacy verification exit=%d output=%s error=%s", code, &out, &stderr)
+		}
+	}
+}
+
 func TestVerifyRunRejectsIncompleteOrInvalidInputs(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

@@ -68,6 +68,9 @@ func startObserverProcess(t *testing.T, initial configv1.ClusterVersion, operato
 	t.Helper()
 	p := &observerProcess{t: t, dir: t.TempDir(), events: make(chan configv1.ClusterVersion), operatorsReady: make(chan struct{}), current: initial}
 	config := liveTestConfigWithHook(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/apis/machineconfiguration.openshift.io/v1/machineconfigpools" || r.URL.Path == "/api/v1/nodes" {
+			return false
+		}
 		w.Header().Set("Content-Type", "application/json")
 		isVersion := strings.Contains(r.URL.Path, "clusterversions")
 		if r.URL.Query().Get("watch") == "true" {
@@ -231,6 +234,7 @@ func (p *observerProcess) finish(wantCode int, completed bool) {
 	if !o[1].ObservedAt.After(v[len(v)-2].ObservedAt) || !v[len(v)-1].ObservedAt.After(o[1].ObservedAt) {
 		p.t.Fatal("final snapshot lacks closing CV bracket")
 	}
+	assertFinalAuxiliaryHistories(p.t, p.runDir(), v[len(v)-2].ObservedAt, v[len(v)-1].ObservedAt)
 	for _, want := range []string{fmt.Sprintf("Completion observed: %t", completed), "Final snapshot: captured", "Operators: 1", "Cluster ID: 11111111-1111-4111-8111-111111111111"} {
 		if !strings.Contains(p.out.String(), want) {
 			p.t.Fatalf("missing %q in stdout=%s", want, &p.out)

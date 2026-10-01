@@ -9,6 +9,8 @@ import (
 	"sync"
 
 	"github.com/nightingale-develop/reconcile-guard/internal/collector"
+	"github.com/nightingale-develop/reconcile-guard/internal/machineconfig"
+	nodehistory "github.com/nightingale-develop/reconcile-guard/internal/node"
 	"github.com/nightingale-develop/reconcile-guard/internal/operator"
 	"github.com/nightingale-develop/reconcile-guard/internal/upgrade"
 )
@@ -27,17 +29,20 @@ func NewJSONLRecorder(
 		)
 	}
 
-	operatorDirectory :=
-		filepath.Join(directory, "operators")
+	directories := []string{
+		filepath.Join(directory, "operators"),
+		filepath.Join(directory, "machine-config-pools"),
+		filepath.Join(directory, "nodes"),
+	}
 
-	if err := os.MkdirAll(
-		operatorDirectory,
-		0755,
-	); err != nil {
-		return nil, fmt.Errorf(
-			"create output directory: %w",
-			err,
-		)
+	for _, path := range directories {
+		if err := os.MkdirAll(path, 0755); err != nil {
+			return nil, fmt.Errorf(
+				"create output directory %q: %w",
+				path,
+				err,
+			)
+		}
 	}
 
 	return &JSONLRecorder{
@@ -107,6 +112,82 @@ func (r *JSONLRecorder) AppendOperator(
 	return nil
 }
 
+func (r *JSONLRecorder) AppendMachineConfigPool(
+	observation machineconfig.Observation,
+) error {
+	name := observation.Pool.Name
+
+	if name == "" ||
+		name == "." ||
+		name == ".." ||
+		filepath.Base(name) != name {
+		return fmt.Errorf(
+			"invalid MachineConfigPool name %q",
+			name,
+		)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	path := filepath.Join(
+		r.directory,
+		"machine-config-pools",
+		name+".jsonl",
+	)
+
+	if err := appendJSONLine(
+		path,
+		observation,
+	); err != nil {
+		return fmt.Errorf(
+			"write MachineConfigPool %q observation: %w",
+			name,
+			err,
+		)
+	}
+
+	return nil
+}
+
+func (r *JSONLRecorder) AppendNode(
+	observation nodehistory.Observation,
+) error {
+	name := observation.Node.Name
+
+	if name == "" ||
+		name == "." ||
+		name == ".." ||
+		filepath.Base(name) != name {
+		return fmt.Errorf(
+			"invalid Node name %q",
+			name,
+		)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	path := filepath.Join(
+		r.directory,
+		"nodes",
+		name+".jsonl",
+	)
+
+	if err := appendJSONLine(
+		path,
+		observation,
+	); err != nil {
+		return fmt.Errorf(
+			"write Node %q observation: %w",
+			name,
+			err,
+		)
+	}
+
+	return nil
+}
+
 func AppendCapture(
 	directory string,
 	capture collector.Capture,
@@ -130,6 +211,22 @@ func AppendCapture(
 		}
 	}
 
+	for _, observation := range capture.MachineConfigPools {
+		if err := recorder.AppendMachineConfigPool(
+			observation,
+		); err != nil {
+			return err
+		}
+	}
+
+	for _, observation := range capture.Nodes {
+		if err := recorder.AppendNode(
+			observation,
+		); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -147,6 +244,11 @@ func appendJSONLine(
 	if err != nil {
 		return err
 	}
+
 	err = json.NewEncoder(file).Encode(value)
-	return errors.Join(err, file.Close())
+
+	return errors.Join(
+		err,
+		file.Close(),
+	)
 }

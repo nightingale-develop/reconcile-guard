@@ -32,6 +32,24 @@ func (r *LiveRecorder) CaptureFinal(ctx context.Context) error {
 			return fmt.Errorf("final snapshot: %w", err)
 		}
 	}
+	for _, observation := range capture.MachineConfigPools {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("final snapshot: %w", err)
+		}
+		observation.ObservedAt = r.clock.Observe("machineconfigpool/"+observation.Pool.Name, observation.ObservedAt)
+		if err := r.sink.AppendMachineConfigPool(observation); err != nil {
+			return fmt.Errorf("final snapshot: %w", err)
+		}
+	}
+	for _, observation := range capture.Nodes {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("final snapshot: %w", err)
+		}
+		observation.ObservedAt = r.clock.Observe("node/"+observation.Node.Name, observation.ObservedAt)
+		if err := r.sink.AppendNode(observation); err != nil {
+			return fmt.Errorf("final snapshot: %w", err)
+		}
+	}
 	closing.ObservedAt = r.clock.Observe("clusterversion/version", closing.ObservedAt)
 	if err := r.sink.AppendClusterVersion(closing); err != nil {
 		return fmt.Errorf("final snapshot: %w", err)

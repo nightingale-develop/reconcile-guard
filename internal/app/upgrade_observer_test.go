@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nightingale-develop/reconcile-guard/internal/machineconfig"
+	nodehistory "github.com/nightingale-develop/reconcile-guard/internal/node"
 	"github.com/nightingale-develop/reconcile-guard/internal/operator"
 	"github.com/nightingale-develop/reconcile-guard/internal/upgrade"
 )
@@ -97,6 +99,9 @@ func (s *observerTestSink) AppendClusterVersion(upgrade.ClusterVersionObservatio
 }
 
 func (s *observerTestSink) AppendOperator(operator.Observation) error { return s.err }
+
+func (s *observerTestSink) AppendMachineConfigPool(machineconfig.Observation) error { return s.err }
+func (s *observerTestSink) AppendNode(nodehistory.Observation) error                { return s.err }
 
 func TestObservingSinkDoesNotCompleteAfterCancellationOrWriteFailure(t *testing.T) {
 	for _, failure := range []string{"cancelled", "write failure"} {
