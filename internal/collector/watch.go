@@ -171,8 +171,6 @@ func (r *LiveRecorder) Run(parent context.Context) (runErr error) {
 	return nil
 }
 
-// Use traditional LIST then WATCH, including with clients supporting streaming lists.
-// Reflector still owns resourceVersion, retry and relist handling.
 type listThenWatch struct{ *cache.ListWatch }
 
 func (*listThenWatch) IsWatchListSemanticsUnSupported() bool { return true }

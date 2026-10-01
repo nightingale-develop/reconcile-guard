@@ -17,17 +17,7 @@ func (c cli) verifyRun(
 		return 1
 	}
 
-	input, err := loadRunInput(args[1])
-	if err != nil {
-		fmt.Fprintln(c.stderr, "Error:", err)
-		return 1
-	}
-
-	report, err :=
-		contracts.VerifyClusterUpgrade(
-			input.Versions,
-			input.Histories,
-		)
+	input, report, err := verifyRecordedRun(args[1])
 	if err != nil {
 		fmt.Fprintln(c.stderr, "Error:", err)
 		return 1
@@ -58,4 +48,13 @@ func (c cli) verifyRun(
 	}
 
 	return contractExitCode(report.Verdict)
+}
+
+func verifyRecordedRun(directory string) (runInput, contracts.ClusterUpgradeReport, error) {
+	input, err := loadRunInput(directory)
+	if err != nil {
+		return runInput{}, contracts.ClusterUpgradeReport{}, err
+	}
+	report, err := contracts.VerifyClusterUpgrade(input.Versions, input.Histories)
+	return input, report, err
 }

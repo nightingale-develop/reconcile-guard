@@ -27,7 +27,6 @@ type ProgressingReport struct {
 	Verdict           ContractVerdict
 }
 
-// VerifyProgressing checks a user-supplied sampling policy, not an OpenShift timeout.
 func VerifyProgressing(observations []operator.Observation, limit time.Duration) (ProgressingReport, error) {
 	if limit <= 0 {
 		return ProgressingReport{}, fmt.Errorf("maximum progressing duration must be positive")
@@ -36,7 +35,7 @@ func VerifyProgressing(observations []operator.Observation, limit time.Duration)
 	if err != nil {
 		return ProgressingReport{}, err
 	}
-	// Reject timestamps whose elapsed duration cannot be represented without saturation.
+
 	if observations[len(observations)-1].ObservedAt.After(observations[0].ObservedAt.Add(time.Duration(1<<63 - 1))) {
 		return ProgressingReport{}, fmt.Errorf("history duration exceeds supported range")
 	}
@@ -56,7 +55,7 @@ func VerifyProgressing(observations []operator.Observation, limit time.Duration)
 				episode.Verdict = ContractPass
 			}
 		}
-		// Consecutive True samples describe an observed run, not proof of continuous state.
+
 		if episode.ObservedSpan > limit {
 			episode.Verdict = ContractFail
 		}

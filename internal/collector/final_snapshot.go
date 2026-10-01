@@ -5,8 +5,6 @@ import (
 	"fmt"
 )
 
-// CaptureFinal must run after Run returns, when all informer writes have stopped.
-// Explicit fresh reads bypass WATCH deduplication, even for unchanged objects.
 func (r *LiveRecorder) CaptureFinal(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("final snapshot: %w", err)
@@ -16,7 +14,7 @@ func (r *LiveRecorder) CaptureFinal(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("final snapshot: %w", err)
 	}
-	// Bound the operator LIST with a second real CV observation; do not extrapolate.
+
 	closing, err := c.captureVersion(ctx)
 	if err != nil {
 		return fmt.Errorf("final snapshot closing ClusterVersion: %w", err)

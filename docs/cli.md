@@ -1,113 +1,86 @@
 # CLI reference
 
-[README](../README.md) · [CLI](cli.md) · [Contracts](contracts.md) · [Development](development.md)
+[README](../README.md) · [Contracts](contracts.md) · [JSON output](json-output.md)
 
-| Command | Result |
+| Command | Purpose |
 | --- | --- |
-| `help` / `version` | Show usage / `ReconcileGuard v0.1.0`. |
-| `check <file>` | Report the snapshot's Degraded condition. False does not establish overall health. |
-| `replay <file.jsonl>` | Report changes in Available, Progressing and Degraded between adjacent observations. Missing conditions are counted as uncompared pairs, never bridged. |
-| `check-version <file.json>` | Inspect ClusterVersion status.desired, conditions and update history. |
-| `replay-version <file.jsonl>` | Validate the history and reconstruct analytical upgrade phases. |
-| `verify-upgrade <version.jsonl> <operator.jsonl>` | Correlate both timelines and evaluate the normal-upgrade condition contract for one operator. |
-| `verify-version-upgrade <version.jsonl> <operator.jsonl>` | Verify that the ClusterOperator reports the completed OpenShift target version after upgrade completion. |
-| `verify-cluster-upgrade <version.jsonl> <operator.jsonl>...` | Run upgrade contracts for multiple supplied ClusterOperators and produce an aggregate report. |
-| `verify-run <runs-directory/run-id>` | Verify a stopped recording run's condition and version histories; supports `--output text|json`. |
-| `compare-runs <baseline-run-directory> <candidate-run-directory>` | Compare conditions/version verdicts between two stopped runs; supports `--output text|json`. |
-| `verify-progressing <operator.jsonl> <max-duration>` | Operator-only sampled Progressing check with a positive Go duration. |
-| `verify-progressing-upgrade <version.jsonl> <operator.jsonl> <policy.json>` | Upgrade-correlated Progressing check with an explicit project policy. |
+| `help` / `version` | Show usage / application version. |
+| `check <file>` | Inspect one operator snapshot's Degraded condition. |
+| `replay <file.jsonl>` | Report adjacent Available, Progressing and Degraded changes. |
+| `check-version <file.json>` | Inspect one ClusterVersion snapshot. |
+| `replay-version <file.jsonl>` | Validate history and reconstruct phases. |
+| `verify-upgrade <version.jsonl> <operator.jsonl>` | Check normal-upgrade conditions for one operator. |
+| `verify-version-upgrade <version.jsonl> <operator.jsonl>` | Check post-completion operator version. |
+| `verify-cluster-upgrade <version.jsonl> <operator.jsonl>...` | Check several operators and aggregate results. |
+| `verify-progressing <operator.jsonl> <duration>` | Apply the operator-only sampled duration check. |
+| `verify-progressing-upgrade <version.jsonl> <operator.jsonl> <policy.json>` | Apply a policy during an upgrade. |
+| `capture-live <dir> [--kubeconfig <path>]` | Capture one ClusterVersion and operator LIST. |
+| `record-live <dir> [--kubeconfig <path>]` | Record both resources through LIST/WATCH until stopped. |
+| `observe-upgrade <dir> [--kubeconfig <path>]` | Record, stop on observed completion, finalize and verify. |
+| `verify-run <run-dir>` | Verify one stopped recording. |
+| `compare-runs <baseline-dir> <candidate-dir>` | Compare condition/version verdicts between stopped runs. |
 
-`capture-live <directory> [--kubeconfig <path>]` performs one append operation:
-it GETs the named ClusterVersion and LISTs ClusterOperators. `record-live
-<directory> [--kubeconfig <path>]` keeps both resources under LIST/WATCH until
-SIGINT/SIGTERM. Recording requires LIST/WATCH permissions on both
-resource types in `config.openshift.io` plus GET on ClusterVersion/version for
-final capture; capture-live needs GET on ClusterVersion/version
-and LIST on ClusterOperators, without WATCH. Both use the current kubeconfig/context
-unless `--kubeconfig <path>` is supplied. Initial authentication, Forbidden, missing-resource and sink errors exit `1`.
-After an informer has synced, transient Unauthorized is retried by client-go. Ordinary watch
-recovery is handled by client-go. ClusterVersion is filtered to
-`metadata.name=version`; ClusterOperator deletion is ignored, while missing or
-deleted ClusterVersion is fatal.
+Use the current kubeconfig/context unless `--kubeconfig` is supplied. Live
+commands are read-only. Recording needs LIST/WATCH on ClusterVersion and
+ClusterOperator; final capture also needs GET on ClusterVersion. Generated runs
+contain `run.json`, a ClusterVersion JSONL stream, and per-operator streams.
+`capture-live` needs only GET ClusterVersion and LIST ClusterOperators.
+Client-go manages reconnect/relist. Initial Unauthorized, Forbidden, missing
+ClusterVersion and sink errors are fatal; Unauthorized after sync is retried.
+ClusterOperator deletion is ignored.
 
-`record-live <runs-directory>` creates a unique UTC run directory containing
-`run.json`, `cluster-version.jsonl` and `operators/<name>.jsonl`. The manifest
-is finalized as `stopped` only after graceful final capture succeeds (exit `0`),
-or `failed` on an error (exit `1`). After SIGINT/SIGTERM the WATCH workers stop
-and their writes drain; the recorder reuses capture-live reads for GET CV →
-LIST all CO, then GET CV again to close the temporal bracket. Final capture has
-a separate 30-second API context; it does not reuse the cancelled watch context.
-API or write errors, including partial final writes, prevent `stopped`.
-Final operators are sorted by name and appended even with unchanged
-resourceVersion, using fresh UTC timestamps with per-resource monotonicity.
-Ordinary WATCH deduplication is unchanged. No CLI or artifact schema changes. `verify-run`
-accepts only a stopped run, validates its manifest and local histories, and
-returns `0` PASS, `2` FAIL, `3` INCONCLUSIVE or `1` for invalid/incomplete input.
-The run must be `stopped`; `recording` and `failed` runs are rejected before any
-verdict. It checks strict manifest inventory, operator filenames and names,
-local/resolved paths, and nonempty clusterID consistency before conditions and
-version consistency. Progressing duration is not part of this aggregate. A run
-manifest does not provide cryptographic provenance or prove that the full
-cluster was recorded. Replay paths are the generated files,
-for example `replay-version <runs-root>/<run-id>/cluster-version.jsonl` and
-`replay <runs-root>/<run-id>/operators/ingress.jsonl`.
-
-`compare-runs` loads and verifies both stopped runs, then compares only the
-normal-upgrade conditions and operator-version contracts. P→F is a regression,
-F→P an improvement, P→P and F→F are unchanged, and missing or inconclusive
-contracts are inconclusive. FAIL outranks INCONCLUSIVE, which outranks PASS;
-operator scope differences are inconclusive unless a real regression is found.
-Output is sorted by operator name. Different cluster IDs and target versions
-are allowed after each run passes local validation. No durations, samples,
-Progressing contract or provenance score is included. Both split and equals forms
-of `--output text|json` are supported, with text as the default.
-
-Comparison PASS means no detected regression, not candidate health: persistent
-FAIL→FAIL is unchanged and may produce comparison PASS while candidate
-verification remains FAIL. An INCONCLUSIVE baseline cannot prove a regression,
-even when the candidate is FAIL. Both verification verdicts are printed.
-Exit codes are `0` comparison PASS, `1` input/usage/output error, `2` regression
-FAIL and `3` comparison INCONCLUSIVE, in both text and JSON.
-
-All `verify-*` commands accept the optional `--output text|json` (also
-`--output=text|json`). Text is the default. JSON output is a document with
-`schemaVersion`, `command` and `result` fields; the result contains the overall
-verdict, per-operator contracts, contract details and any available evidence.
-See the [JSON output reference](json-output.md) for the schema and evidence
-fields. The current schema version is `1`. The option is rejected for `check`,
-`replay`, `check-version` and `replay-version`, and it may be supplied only once.
-
-## Input format
-
-JSONL records contain `observedAt` and either `operator` or `clusterVersion`. Each file must describe one resource with strictly increasing, nonzero timestamps. Blank lines are ignored; malformed JSON and oversized lines report their physical line number. Readers allow lines smaller than 4 MiB. Unknown JSON fields are ignored; this is not full API-schema validation.
-
-`observedAt` is the snapshot capture time. OpenShift's `lastTransitionTime` is a separate reported timestamp. Transitions retain the interval between adjacent observations, not an invented exact event time.
-
-## Examples
-
-Run from the repository root after the build in the [quick start](../README.md#quick-start).
+## Observe one upgrade
 
 ```sh
-./reconcile-guard check examples/ingress-ok.json
-./reconcile-guard replay examples/ingress-history.jsonl
-./reconcile-guard check-version examples/cluster-version.json
-./reconcile-guard replay-version examples/cluster-version-history.jsonl
-./reconcile-guard verify-upgrade examples/cluster-version-history.jsonl examples/ingress-upgrade-history.jsonl
-./reconcile-guard verify-version-upgrade examples/cluster-version-history.jsonl examples/ingress-version-history.jsonl
-./reconcile-guard verify-cluster-upgrade examples/cluster-version-history.jsonl examples/ingress-version-history.jsonl examples/network-version-history.jsonl
-./reconcile-guard verify-progressing examples/ingress-history.jsonl 10m
-./reconcile-guard verify-progressing-upgrade examples/cluster-version-history.jsonl examples/ingress-upgrade-history.jsonl examples/progressing-policy.json
+./reconcile-guard observe-upgrade ./runs --kubeconfig "$HOME/.kube/config"
 ```
 
-All fixtures are synthetic. The version and multi-operator examples return PASS (0). The operator-only Progressing example returns PASS (0) at the illustrative `10m` limit. The upgrade-aware Progressing example returns INCONCLUSIVE (3); this is expected for these sparse inputs, not a processing error. The `10m` limit is illustrative, not an OpenShift requirement. See [contract semantics](contracts.md) and the [example policy](../examples/progressing-policy.md).
+The administrator starts the upgrade separately. Recording begins immediately;
+STABLE waits, an initial UPDATING state is accepted with an incomplete-baseline
+warning, and UNKNOWN is preserved without guessing. The observer tracks desired
+version and image together. A target change resets the active target and
+requires new UPDATING evidence. Automatic stop requires the phase analyzer to
+observe COMPLETED for that same target. Missed or ambiguous transitions may
+require Ctrl+C.
 
-## Exit codes
+On stop, WATCH writes drain and a fresh GET ClusterVersion → LIST all operators
+→ GET ClusterVersion bracket is captured before the run is marked stopped. The
+final API context lasts 30 seconds. Ctrl+C/SIGTERM preserves a stopped partial run when
+final capture succeeds; the summary says whether live completion was observed,
+even if final reads show completion later.
+Final reads append unchanged resourceVersions with fresh per-resource UTC
+timestamps; WATCH still deduplicates them. Final API/write errors mark the run
+failed and exit `1`. After success, the summary includes run/cluster IDs, target
+version/image, completion flag, final snapshot status and operator verdict counts.
+Both automatic and manual stopping return the saved-run verification exit code.
 
-| Code | `check` | all `verify-*` commands |
-| --- | --- | --- |
-| 0 | Degraded=False | PASS |
-| 1 | Input/usage error | Input/usage error |
-| 2 | Degraded=True | FAIL |
-| 3 | Degraded=Unknown or missing | INCONCLUSIVE |
+## Runs and comparison
 
-`check-version`, `replay` and `replay-version` return 0 for successful processing and 1 for errors; they do not return contract verdicts. Diagnostics go to stdout, errors to stderr. JSON encoding failures are reported as input/usage-style errors with exit code 1.
+`verify-run` accepts only a locally consistent stopped run and checks conditions
+and operator-version consistency. It does not include Progressing duration.
+`compare-runs` allows different clusters and targets after local validation and
+compares only condition/version contracts. PASS means no detected regression;
+FAIL→FAIL is unchanged; either INCONCLUSIVE/missing side is inconclusive. Different
+operator sets are INCONCLUSIVE unless a proven regression takes precedence.
+
+## Input and output
+
+JSONL records contain `observedAt` and either `operator` or `clusterVersion`.
+Timestamps must be strictly increasing and nonzero. Blank lines are ignored;
+malformed JSON and oversized lines report their physical line. Unknown fields
+are ignored. `observedAt` is capture time; OpenShift `lastTransitionTime` is a
+reported field and is not substituted for capture time.
+
+Verification, `verify-run`, and `compare-runs` accept `--output text|json` (or
+the equals form); text is the default. See [JSON output](json-output.md).
+`observe-upgrade` is text-only. `check-version` and replay commands return `0`
+for successful processing and `1` for errors, without a contract verdict.
+`check` returns `0` for Degraded=False, `2` for True, `3` for Unknown/missing,
+and `1` for errors. `record-live` returns `0` on clean shutdown, without verification.
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | PASS, or successful non-verification processing |
+| `1` | Input, usage, API, finalization, or output error |
+| `2` | FAIL or detected comparison regression |
+| `3` | INCONCLUSIVE |

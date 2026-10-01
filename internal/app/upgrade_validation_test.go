@@ -3,15 +3,16 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"path/filepath"
+	"reflect"
+	"testing"
+	"time"
+
 	"github.com/nightingale-develop/reconcile-guard/internal/operator"
 	"github.com/nightingale-develop/reconcile-guard/internal/recording"
 	"github.com/nightingale-develop/reconcile-guard/internal/regression"
 	"github.com/nightingale-develop/reconcile-guard/internal/result"
 	"github.com/nightingale-develop/reconcile-guard/internal/upgrade"
-	"path/filepath"
-	"reflect"
-	"testing"
-	"time"
 )
 
 func TestRecordedUpgradeRunPipeline(t *testing.T) {
@@ -82,7 +83,7 @@ func TestRecordedUpgradeRunPipeline(t *testing.T) {
 			}
 		}
 	}
-	// A malformed recorded stream must stay an input error in either command.
+
 	path := filepath.Join(run.Directory(), "operators/ingress.jsonl")
 	data, err := json.Marshal(operators[0])
 	if err != nil {

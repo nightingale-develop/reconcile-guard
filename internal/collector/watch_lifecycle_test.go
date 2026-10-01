@@ -88,7 +88,7 @@ func TestLiveRecorderLifecycle(t *testing.T) {
 	cancel, done := startRecording(t, client, sink)
 	vw, ow := nextWatch(t, versions), nextWatch(t, operators)
 	waitForCounts(t, sink, 1, 2)
-	// A later update is a barrier: same-stream callbacks before it have completed.
+
 	ow.Modify(ingress.DeepCopy())
 	updated := ingress.DeepCopy()
 	updated.SetResourceVersion("2")
@@ -332,7 +332,7 @@ func TestLiveRecorderExpiredWatchRelists(t *testing.T) {
 	cancel, done := startRecording(t, client, sink)
 	w := nextWatch(t, streams)
 	waitForCounts(t, sink, 1, 1)
-	// Change the tracker directly: the next LIST, rather than a watch event, must see it.
+
 	if err := client.Tracker().Update(clusterOperatorResource, liveObject("ClusterOperator", "ingress", "2"), ""); err != nil {
 		t.Fatal(err)
 	}

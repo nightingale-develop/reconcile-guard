@@ -13,7 +13,6 @@ const (
 	versionContract    = "operator-version-consistency"
 )
 
-// Compare uses contract verdicts only. A comparison PASS does not certify either run.
 func Compare(baseline, candidate contracts.ClusterUpgradeReport) (Report, error) {
 	before, err := indexOperators(baseline)
 	if err != nil {
@@ -116,7 +115,7 @@ func indexOperators(report contracts.ClusterUpgradeReport) (map[string]contracts
 			{operator.Version.Contract, versionContract, operator.Version.Verdict},
 		} {
 			if contract.name == "" && contract.verdict == "" {
-				continue // A zero-value contract is absent, not a successful check.
+				continue
 			}
 			if contract.name != contract.expected || !validVerdict(contract.verdict) {
 				return nil, fmt.Errorf("operator %q: invalid %s contract name/verdict %q/%q", operator.Operator, contract.expected, contract.name, contract.verdict)

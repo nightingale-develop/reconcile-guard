@@ -75,6 +75,38 @@ func TestRunLifecycle(t *testing.T) {
 	}
 }
 
+func TestRunCommandCompatibility(t *testing.T) {
+	start := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	for _, command := range []string{"record-live", "observe-upgrade"} {
+		t.Run(command, func(t *testing.T) {
+			run, err := StartRunForCommand(t.TempDir(), "0.2.0", "https://api.example", start, command)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := run.Finish(RunStatusStopped, start.Add(time.Minute), RunSnapshot{}, nil); err != nil {
+				t.Fatal(err)
+			}
+			manifest, err := ReadRunManifest(run.Directory())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if manifest.Command != command || manifest.SchemaVersion != "1" || manifest.Status != RunStatusStopped {
+				t.Fatalf("manifest=%+v", manifest)
+			}
+		})
+	}
+	for _, command := range []string{"", "unknown"} {
+		directory := t.TempDir()
+		if _, err := StartRunForCommand(directory, "0.2.0", "server", start, command); err == nil {
+			t.Fatalf("accepted command %q", command)
+		}
+		entries, err := os.ReadDir(directory)
+		if err != nil || len(entries) != 0 {
+			t.Fatalf("invalid command created artifacts: entries=%v err=%v", entries, err)
+		}
+	}
+}
+
 func TestRunManifestSnapshotDoesNotAlias(t *testing.T) {
 	r, err := StartRun(t.TempDir(), "test", "server", time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC))
 	if err != nil {

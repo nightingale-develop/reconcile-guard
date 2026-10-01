@@ -64,6 +64,13 @@ func StartRun(
 	server string,
 	startedAt time.Time,
 ) (*Run, error) {
+	return StartRunForCommand(parentDirectory, toolVersion, server, startedAt, "record-live")
+}
+
+func StartRunForCommand(parentDirectory, toolVersion, server string, startedAt time.Time, command string) (*Run, error) {
+	if command != "record-live" && command != "observe-upgrade" {
+		return nil, fmt.Errorf("unsupported recording command %q", command)
+	}
 	if parentDirectory == "" {
 		return nil, fmt.Errorf(
 			"run output directory is required",
@@ -115,7 +122,7 @@ func StartRun(
 			Status:        RunStatusRecording,
 			StartedAt:     startedAt,
 			ToolVersion:   toolVersion,
-			Command:       "record-live",
+			Command:       command,
 			Source: RunSource{
 				Server: server,
 			},
@@ -315,8 +322,8 @@ func validateRunManifest(manifest RunManifest) error {
 		)
 	}
 
-	if manifest.StartedAt.IsZero() || manifest.ToolVersion == "" || manifest.Command != "record-live" {
-		return fmt.Errorf("run manifest requires startedAt, toolVersion and command record-live")
+	if manifest.StartedAt.IsZero() || manifest.ToolVersion == "" || (manifest.Command != "record-live" && manifest.Command != "observe-upgrade") {
+		return fmt.Errorf("run manifest requires startedAt, toolVersion and command record-live or observe-upgrade")
 	}
 	switch manifest.Status {
 	case RunStatusRecording:

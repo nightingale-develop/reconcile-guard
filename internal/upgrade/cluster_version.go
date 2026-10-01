@@ -8,8 +8,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 )
 
-// ClusterVersionReport preserves reported data from one ClusterVersion snapshot.
-// It is not an upgrade verdict.
 type ClusterVersionReport struct {
 	Name       string
 	Desired    configv1.Release

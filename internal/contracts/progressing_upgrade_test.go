@@ -58,7 +58,7 @@ func TestUpgradeProgressingScopeAndEvidence(t *testing.T) {
 	if !bytes.Equal(before, after) {
 		t.Fatal("inputs mutated")
 	}
-	// Stable/completed samples must not supply False boundaries to the updating run.
+
 	full := loadContractVersions(t)
 	observations = durationUpgradeOperators(full[0].ObservedAt, "FTF")
 	for i := range observations {
@@ -150,7 +150,7 @@ func TestUpgradeProgressingDoesNotBridgeVersionGaps(t *testing.T) {
 			}
 		})
 	}
-	// Dense CV samples cannot hide a large operator sampling gap.
+
 	v := durationUpgradeVersions(t, 0, 1, 2, 3, 4)
 	o := durationUpgradeOperators(v[0].ObservedAt, "TT")
 	o[1].ObservedAt = v[4].ObservedAt

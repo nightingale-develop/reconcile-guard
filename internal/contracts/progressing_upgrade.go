@@ -36,7 +36,6 @@ type ProgressingUpgradeReport struct {
 	Evidence          []ProgressingUpgradeEvidence
 }
 
-// VerifyUpgradeProgressing applies an explicitly supplied project policy, not a platform-wide timeout.
 func VerifyUpgradeProgressing(versions []upgrade.ClusterVersionObservation, observations []operator.Observation, policy ProgressingPolicy) (ProgressingUpgradeReport, error) {
 	if policy.Limit <= 0 || policy.MaxObservationGap <= 0 {
 		return ProgressingUpgradeReport{}, fmt.Errorf("policy durations must be positive")
@@ -58,7 +57,7 @@ func VerifyUpgradeProgressing(versions []upgrade.ClusterVersionObservation, obse
 	}
 	report := ProgressingUpgradeReport{Operator: history.Operator, Policy: policy, Verdict: ContractInconclusive,
 		PolicyApplicable: policy.Operator == history.Operator && strings.TrimSpace(policy.Source) != "" && strings.TrimSpace(policy.TargetVersion) != ""}
-	// Each block is bounded by phase, target identity and permitted sampling gaps.
+
 	blocks := make([]int, len(states))
 	block := 0
 	for i, state := range states {

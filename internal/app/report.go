@@ -123,6 +123,9 @@ func (c cli) printUsage() {
 	)
 
 	fmt.Fprintln(c.stdout,
+		"  observe-upgrade <runs-directory> [--kubeconfig <path>]  Observe an upgrade, stop on completion and verify the run",
+	)
+	fmt.Fprintln(c.stdout,
 		"  verify-run <run-directory>  Verify all operator histories from a recorded run",
 	)
 	fmt.Fprintln(c.stdout,

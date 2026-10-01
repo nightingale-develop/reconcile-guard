@@ -240,6 +240,9 @@ func (c cli) run(args []string) int {
 	case "record-live":
 		return c.recordLive(args[1:])
 
+	case "observe-upgrade":
+		return c.observeUpgrade(args[1:])
+
 	case "verify-run":
 		return c.verifyRun(args)
 	case "compare-runs":
