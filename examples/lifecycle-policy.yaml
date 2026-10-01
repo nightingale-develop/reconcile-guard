@@ -1,0 +1,31 @@
+apiVersion: reconcileguard.io/v1alpha1
+kind: UpgradePolicy
+targetVersion: 4.20.0
+source: examples/lifecycle-policy.md#synthetic-example
+maxObservationGap: 2m
+
+defaults:
+  availabilityLoss:
+    maxObservedDuration: 2m
+  degraded:
+    maxObservedDuration: 5m
+  progressing:
+    maxObservedDuration: 20m
+  machineConfigPool:
+    postCompletionGracePeriod: 10m
+  node:
+    readyPostCompletionGracePeriod: 5m
+    configAlignedPostCompletionGracePeriod: 10m
+
+operators:
+  authentication:
+    degraded:
+      maxObservedDuration: 3m
+
+machineConfigPools:
+  worker:
+    postCompletionGracePeriod: 20m
+
+nodes:
+  worker-0:
+    readyPostCompletionGracePeriod: 10m

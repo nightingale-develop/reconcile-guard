@@ -59,8 +59,9 @@ contradictory evidence remains UNKNOWN.
 
 The evidence contract only evaluates confidently correlated samples at or after
 an observed ClusterVersion COMPLETED transition for the same target. At least one
-STABLE applicable sample yields PASS. Otherwise the result is INCONCLUSIVE. It
-does not emit FAIL in v0.3.0 and does not affect the aggregate operator verdict.
+STABLE applicable sample yields PASS. Otherwise the result is INCONCLUSIVE. The
+base evidence contract does not emit FAIL and does not affect the aggregate
+operator verdict; explicit threshold-based FAILs belong to `verify-lifecycle-policy`.
 
 ### Node lifecycle evidence
 
@@ -76,3 +77,56 @@ evidence, not promoted to FAIL without an explicit lifecycle policy.
 Reports describe supplied snapshots and intervals. They do not infer unsampled
 state, prove uninterrupted availability, diagnose causes, or establish cluster
 provenance. Preserve the original JSONL files with reports.
+
+## Explicit lifecycle policies (v0.4.0)
+
+`verify-lifecycle-policy` turns selected lifecycle evidence into policy verdicts
+only when the user supplies thresholds. The policy is versioned as
+`reconcileguard.io/v1alpha1` / `UpgradePolicy` and must identify its threshold
+`source`. ReconcileGuard does not ship default lifecycle timeouts.
+
+### Operator duration rules
+
+During confidently correlated ClusterVersion `UPDATING` intervals, policies may
+bound observed episodes of:
+
+- `availabilityLoss`: `Available=False`;
+- `degraded`: `Degraded=True`;
+- `progressing`: `Progressing=True`.
+
+Each rule has `maxObservedDuration`. A directly observed adverse span beyond the
+threshold is FAIL. A shorter adverse episode is PASS only when known good samples
+before and after bound the sampled episode inside the threshold. An open-ended
+short episode is INCONCLUSIVE. Missing/Unknown conditions, ambiguous correlation,
+target changes, and gaps larger than `maxObservationGap` break the episode and
+preserve uncertainty instead of bridging it.
+
+These are project policies, not claims that OpenShift requires a ClusterOperator
+to recover within the configured duration.
+
+### MachineConfigPool post-completion rule
+
+`postCompletionGracePeriod` delays policy enforcement until that interval has
+elapsed after an observed ClusterVersion COMPLETED transition for the policy
+target. After the deadline, confidently correlated MCP samples are evaluated as
+sampled state:
+
+- STABLE is compliant;
+- UPDATING or DEGRADED is a direct policy violation and yields FAIL;
+- UNKNOWN remains INCONCLUSIVE.
+
+A PASS means the applicable recorded samples after the grace period were STABLE.
+It does not prove the exact instant when the pool converged between samples.
+
+### Node post-completion rules
+
+Nodes can configure independent `readyPostCompletionGracePeriod` and
+`configAlignedPostCompletionGracePeriod` thresholds. After the corresponding
+deadline, a confidently correlated `Ready=False` sample or directly observed
+current/desired MachineConfig divergence is FAIL. Ready=Unknown or missing
+MachineConfig annotations are INCONCLUSIVE. PASS describes sampled compliance
+only and does not infer unsampled continuity.
+
+Policy results are separate from the evidence-only MCP/Node contracts emitted by
+`verify-run`. `verify-lifecycle-policy` aggregates only policy contracts with
+FAIL > INCONCLUSIVE > PASS precedence.

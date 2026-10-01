@@ -2,7 +2,7 @@
 
 [README](../README.md) · [CLI](cli.md) · [Contracts](contracts.md)
 
-Verification commands, `verify-run`, and `compare-runs` accept `--output json`
+Verification commands, `verify-run`, `verify-lifecycle-policy`, and `compare-runs` accept `--output json`
 or `--output=json`; text is the default. Snapshot/replay commands and
 `observe-upgrade` are text-only. JSON is written to stdout and errors to stderr.
 
@@ -18,9 +18,18 @@ include optional `machineConfigPools` and `nodes` resource arrays alongside
 valid. Evidence can carry
 observations, intervals, expected/actual values, correlation, reasons, messages,
 policy sources and contract-specific attributes. Empty optional fields are
-omitted. MCP/Node entries contain evidence-only lifecycle contracts; their verdicts do not
-change the top-level aggregate operator verdict. JSON summarizes the selected
-checks; it does not embed input snapshots.
+omitted. MCP/Node entries emitted by `verify-run` contain evidence-only lifecycle contracts;
+their verdicts do not change the top-level aggregate operator verdict.
+
+`verify-lifecycle-policy` reuses the same `result` envelope but its top-level
+verdict aggregates only the explicit policy contracts. Operator entries contain
+condition-duration contracts; MCP and Node entries contain post-completion policy
+contracts. Contract `details.values` include the declared threshold source and
+durations, while evidence records the sampled episode or post-completion state.
+A policy FAIL therefore means a supplied policy threshold was directly violated,
+not that an OpenShift product guarantee was violated.
+
+JSON summarizes the selected checks; it does not embed input snapshots.
 
 `compare-runs` uses a `comparison` envelope with baseline/candidate summaries,
 scope, contract changes and its aggregate verdict. It compares only condition and

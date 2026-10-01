@@ -143,6 +143,9 @@ func (c cli) run(args []string) int {
 	case "verify-progressing-upgrade":
 		return c.verifyUpgradeProgressing(args)
 
+	case "verify-lifecycle-policy":
+		return c.verifyLifecyclePolicy(args)
+
 	case "verify-version-upgrade":
 		return c.verifyUpgradeVersion(args)
 

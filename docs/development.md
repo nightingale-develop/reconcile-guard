@@ -25,6 +25,7 @@ The race detector needs a supported platform and C toolchain.
 | `internal/node/` | Node history validation and lifecycle evidence analysis. |
 | `internal/upgrade/` | ClusterVersion readers and phase reconstruction. |
 | `internal/contracts/` | Correlation and contract evaluation. |
+| `internal/policy/` | Versioned explicit lifecycle policy schema, parsing, validation and inheritance. |
 | `internal/recording/` | Run manifests and JSONL persistence. |
 | `internal/regression/` | Compare computed contract verdicts. |
 | `internal/result/` | Shared verification output model. |
@@ -34,10 +35,14 @@ Pipeline: observations → validated timelines → phases → correlation → ch
 evidence report. Domain packages do not depend on the CLI.
 The live commands share run creation/shutdown; the observer reuses AnalyzePhases
 and verify-run's loader/checks. Collector owns API reads, not contract decisions.
-Tests cover lifecycle analysis, MCP/Node evidence correlation, signals, final snapshots, exits and HTTP 401/403 on a fake API.
+Tests cover lifecycle analysis, MCP/Node evidence correlation, explicit policy parsing/evaluation, signals, final snapshots, exits and HTTP 401/403 on a fake API.
 
 ## Limits and next work
 
 OpenShift integration has limited validation; kind is not an OpenShift
 substitute. There is no root-cause diagnosis or provenance proof. Sampling gaps,
-watch failures and clock differences remain material. Future work includes explicit lifecycle policies, real automatic observer completion and expired-resourceVersion validation. Run manifests, MCP/Node evidence analysis, and comparable-run analysis are already implemented.
+watch failures and clock differences remain material. Explicit lifecycle policies
+are implemented in v0.4.0 with no built-in thresholds. Future work includes
+human-readable timeline/Markdown reports, real automatic observer completion and
+additional expired-resourceVersion validation. Run manifests, MCP/Node evidence
+analysis, and comparable-run analysis are already implemented.

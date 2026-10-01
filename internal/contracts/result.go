@@ -369,3 +369,129 @@ func NodeLifecycleResult(
 		Evidence: evidence,
 	}
 }
+
+func OperatorConditionPolicyResult(
+	report OperatorConditionPolicyReport,
+) result.Contract {
+	evidence := make([]result.Evidence, 0, len(report.Episodes))
+	for _, episode := range report.Episodes {
+		attributes := map[string]string{
+			"condition":     string(report.Condition),
+			"adverseStatus": string(report.AdverseStatus),
+			"observedSpan":  episode.ObservedSpan.String(),
+		}
+		if episode.MaximumSpan > 0 {
+			attributes["maximumSpan"] = episode.MaximumSpan.String()
+		}
+		if !episode.BeforeGood.IsZero() {
+			attributes["precedingGood"] = episode.BeforeGood.Format(time.RFC3339Nano)
+		}
+		if !episode.AfterGood.IsZero() {
+			attributes["followingGood"] = episode.AfterGood.Format(time.RFC3339Nano)
+		}
+		evidence = append(evidence, result.Evidence{
+			Kind:       "operator-lifecycle-policy-episode",
+			Verdict:    episode.Verdict,
+			From:       resultTime(episode.FirstAdverse),
+			To:         resultTime(episode.LastAdverse),
+			Source:     report.Source,
+			Attributes: attributes,
+		})
+	}
+	return result.Contract{
+		Name:    report.Contract,
+		Verdict: report.Verdict,
+		Details: &result.Details{
+			Counts: map[string]int{
+				"evaluatedSamples":  report.EvaluatedSamples,
+				"uncertainSamples":  report.UncertainSamples,
+				"missingConditions": report.MissingConditions,
+				"discontinuities":   report.Discontinuities,
+				"episodes":          len(report.Episodes),
+			},
+			Values: map[string]string{
+				"condition":               string(report.Condition),
+				"adverseStatus":           string(report.AdverseStatus),
+				"maximumObservedDuration": report.Limit.String(),
+				"maximumObservationGap":   report.MaxObservationGap.String(),
+				"targetVersion":           report.TargetVersion,
+				"targetImage":             report.TargetImage,
+				"thresholdSource":         report.Source,
+			},
+			Flags: map[string]bool{
+				"policyApplicable": report.PolicyApplicable,
+			},
+		},
+		Evidence: evidence,
+	}
+}
+
+func PostCompletionPolicyResult(
+	report PostCompletionPolicyReport,
+) result.Contract {
+	evidence := make([]result.Evidence, 0, len(report.Evidence))
+	for _, finding := range report.Evidence {
+		attributes := map[string]string{
+			"state":          finding.State,
+			"applicable":     fmt.Sprint(finding.Applicable),
+			"compliant":      fmt.Sprint(finding.Compliant),
+			"uncertain":      fmt.Sprint(finding.Uncertain),
+			"upgradePhase":   string(finding.Correlation.Phase),
+			"desiredVersion": finding.Correlation.DesiredVersion,
+			"desiredImage":   finding.Correlation.DesiredImage,
+		}
+		for key, value := range finding.Attributes {
+			attributes[key] = value
+		}
+		verdict := ContractVerdict("")
+		if finding.Applicable {
+			switch {
+			case finding.Uncertain:
+				verdict = ContractInconclusive
+			case finding.Compliant:
+				verdict = ContractPass
+			default:
+				verdict = ContractFail
+			}
+		}
+		evidence = append(evidence, result.Evidence{
+			Kind:        "post-completion-lifecycle-policy-sample",
+			Verdict:     verdict,
+			ObservedAt:  resultTime(finding.ObservedAt),
+			From:        resultTime(finding.Correlation.FromTime),
+			To:          resultTime(finding.Correlation.ToTime),
+			Correlation: string(finding.Correlation.Kind),
+			Source:      report.Source,
+			Attributes:  attributes,
+		})
+	}
+	values := map[string]string{
+		"targetVersion":             report.TargetVersion,
+		"targetImage":               report.TargetImage,
+		"postCompletionGracePeriod": report.GracePeriod.String(),
+		"thresholdSource":           report.Source,
+	}
+	if !report.CompletionAt.IsZero() {
+		values["completionObservedAt"] = report.CompletionAt.Format(time.RFC3339Nano)
+	}
+	if !report.Deadline.IsZero() {
+		values["evaluationDeadline"] = report.Deadline.Format(time.RFC3339Nano)
+	}
+	return result.Contract{
+		Name:    report.Contract,
+		Verdict: report.Verdict,
+		Details: &result.Details{
+			Counts: map[string]int{
+				"evaluatedSamples": report.EvaluatedSamples,
+				"compliantSamples": report.CompliantSamples,
+				"violatingSamples": report.ViolatingSamples,
+				"uncertainSamples": report.UncertainSamples,
+			},
+			Values: values,
+			Flags: map[string]bool{
+				"policyApplicable": report.PolicyApplicable,
+			},
+		},
+		Evidence: evidence,
+	}
+}

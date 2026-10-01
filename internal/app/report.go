@@ -82,6 +82,7 @@ func (c cli) printUsage() {
 
 	fmt.Fprintln(c.stdout, "Available commands:")
 	fmt.Fprintln(c.stdout, "  verify-progressing-upgrade <version.jsonl> <operator.jsonl> <policy.json>  Check Progressing during UPDATING")
+	fmt.Fprintln(c.stdout, "  verify-lifecycle-policy <run-directory> <policy.yaml>  Apply explicit lifecycle thresholds to a recorded run")
 	fmt.Fprintln(c.stdout, "  verify-progressing <operator-history.jsonl> <max-duration>  Check observed Progressing runs against a user limit")
 	fmt.Fprintln(c.stdout,
 		"  version       Show application version",

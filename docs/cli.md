@@ -13,7 +13,8 @@
 | `verify-version-upgrade <version.jsonl> <operator.jsonl>` | Check post-completion operator version. |
 | `verify-cluster-upgrade <version.jsonl> <operator.jsonl>...` | Check several operators and aggregate results. |
 | `verify-progressing <operator.jsonl> <duration>` | Apply the operator-only sampled duration check. |
-| `verify-progressing-upgrade <version.jsonl> <operator.jsonl> <policy.json>` | Apply a policy during an upgrade. |
+| `verify-progressing-upgrade <version.jsonl> <operator.jsonl> <policy.json>` | Apply a Progressing duration policy during an upgrade. |
+| `verify-lifecycle-policy <run-dir> <policy.yaml>` | Apply explicit operator/MCP/Node lifecycle thresholds to one stopped run. |
 | `capture-live <dir> [--kubeconfig <path>]` | Capture one ClusterVersion plus ClusterOperator, MachineConfigPool, and Node LISTs. |
 | `record-live <dir> [--kubeconfig <path>]` | Record ClusterVersion, ClusterOperator, MachineConfigPool, and Node resources through LIST/WATCH until stopped. |
 | `observe-upgrade <dir> [--kubeconfig <path>]` | Record, stop on observed completion, finalize and verify. |
@@ -56,13 +57,54 @@ failed and exit `1`. After success, the summary includes run/cluster IDs, target
 version/image, completion flag, final snapshot status and operator verdict counts.
 Both automatic and manual stopping return the saved-run verification exit code.
 
+
+## Explicit lifecycle policy
+
+```sh
+./reconcile-guard verify-lifecycle-policy \
+  ./runs/REPLACE_WITH_RUN_ID \
+  examples/lifecycle-policy.yaml --output text
+```
+
+`verify-lifecycle-policy` first performs the same local run validation as
+`verify-run`, then evaluates only rules explicitly present in the supplied
+`UpgradePolicy`. YAML and JSON are accepted. Unknown policy fields are rejected.
+The policy must declare `apiVersion: reconcileguard.io/v1alpha1`,
+`kind: UpgradePolicy`, `targetVersion`, and a nonempty `source`. `targetImage` is
+optional and can disambiguate multiple release images for one version.
+
+Operator rules apply only to confidently correlated `UPDATING` samples for the
+policy target. `availabilityLoss` evaluates `Available=False`, `degraded`
+evaluates `Degraded=True`, and `progressing` evaluates `Progressing=True`. Each
+rule declares `maxObservedDuration`. `maxObservationGap` is required when any
+operator duration rule is configured; larger gaps break episodes and produce
+INCONCLUSIVE evidence instead of bridging missing samples. A directly observed
+adverse span longer than the threshold is FAIL. A shorter episode is PASS only
+when its good-state bounds establish that the whole sampled episode fits inside
+the threshold; otherwise it remains INCONCLUSIVE.
+
+MachineConfigPool and Node rules are evaluated only after an observed
+ClusterVersion COMPLETED transition for the matching target. Their
+`postCompletionGracePeriod` values define when sampled enforcement begins. A
+confident MCP `UPDATING`/`DEGRADED` sample after the deadline is FAIL; MCP
+`UNKNOWN` is INCONCLUSIVE. Node Ready and MachineConfig alignment have independent
+grace periods. `Ready=False` or directly observed config divergence after the
+respective deadline is FAIL; missing/Unknown data is INCONCLUSIVE.
+
+Defaults apply to recorded resources of that kind. Named resource entries
+override the rules they specify. A resource explicitly named by policy but absent
+from the run is INCONCLUSIVE. There are no built-in duration defaults. Policy
+thresholds are user-supplied project rules, not OpenShift guarantees. Aggregate
+policy precedence is FAIL, then INCONCLUSIVE, then PASS.
+
 ## Runs and comparison
 
 `verify-run` accepts only a locally consistent stopped run and checks conditions
 and operator-version consistency. When MCP/Node histories are present, it also
 reconstructs their lifecycle evidence and correlates post-completion samples with
-the ClusterVersion timeline. MCP/Node evidence does not change the aggregate
-operator verdict and does not create FAIL in v0.3.0. It does not include
+the ClusterVersion timeline. Those base MCP/Node evidence contracts do not change
+the aggregate operator verdict and do not create FAIL. Explicit policy FAILs are
+reported only by `verify-lifecycle-policy`. `verify-run` does not include
 Progressing duration.
 `compare-runs` allows different clusters and targets after local validation and
 compares only condition/version contracts. PASS means no detected regression;
@@ -78,7 +120,7 @@ malformed JSON and oversized lines report their physical line. Unknown fields
 are ignored. `observedAt` is capture time; OpenShift `lastTransitionTime` is a
 reported field and is not substituted for capture time.
 
-Verification, `verify-run`, and `compare-runs` accept `--output text|json` (or
+Verification commands, `verify-run`, `verify-lifecycle-policy`, and `compare-runs` accept `--output text|json` (or
 the equals form); text is the default. See [JSON output](json-output.md).
 `observe-upgrade` is text-only. `check-version` and replay commands return `0`
 for successful processing and `1` for errors, without a contract verdict.

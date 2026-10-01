@@ -72,6 +72,8 @@ jq '{runId,status,source,operators,machineConfigPools,nodes,error}' ./runs/REPLA
 ./reconcile-guard replay-version ./runs/REPLACE_WITH_RUN_ID/cluster-version.jsonl
 ./reconcile-guard verify-run ./runs/REPLACE_WITH_RUN_ID --output text
 ./reconcile-guard verify-run ./runs/REPLACE_WITH_RUN_ID --output json > verification.json
+# Optional: apply an explicitly reviewed project policy
+./reconcile-guard verify-lifecycle-policy ./runs/REPLACE_WITH_RUN_ID ./policy.yaml --output text
 # Optional: compare against a previous stopped recording
 ./reconcile-guard compare-runs ./baseline/REPLACE_WITH_RUN_ID ./runs/REPLACE_WITH_RUN_ID
 ```
@@ -84,9 +86,12 @@ revision, source/target releases and any errors.
 ## Interpretation
 
 Phase names are analytical. `observedAt` is local capture time and differs
-from OpenShift `lastTransitionTime`. `verify-run` in v0.3.0 also reports MCP and
-Node lifecycle evidence after completion; these auxiliary verdicts do not change
-the aggregate operator verdict. Independent watches, stale generations,
+from OpenShift `lastTransitionTime`. `verify-run` reports MCP and Node lifecycle
+evidence after completion; these auxiliary verdicts do not change the aggregate
+operator verdict. v0.4.0 can additionally apply a user-supplied lifecycle policy
+with `verify-lifecycle-policy`, but those threshold-based policy checks have not
+yet been validated through a new real upgrade cycle and must not be presented as
+OpenShift product guarantees. Independent watches, stale generations,
 target changes, clock skew, and missing operator samples can leave a completed
 upgrade INCONCLUSIVE. Final GET ClusterVersion → LIST ClusterOperator → LIST
 MachineConfigPool → LIST Node → GET ClusterVersion reads provide a temporal

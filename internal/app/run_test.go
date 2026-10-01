@@ -64,7 +64,7 @@ func TestRun(t *testing.T) {
 	}{
 		{"help", []string{"help"}, 0, "verify-upgrade", ""},
 		{"no command", nil, 0, "Usage:", ""},
-		{"version", []string{"version"}, 0, "v0.3.0", ""},
+		{"version", []string{"version"}, 0, "v0.4.0", ""},
 		{"unknown", []string{"bogus"}, 1, "", "Unknown command:"},
 		{"check ok", []string{"check", "../../examples/ingress-ok.json"}, 0, "NOT DEGRADED (reported)", ""},
 		{"check degraded", []string{"check", "../../examples/ingress.json"}, 2, "Result: DEGRADED", ""},
@@ -140,7 +140,7 @@ func TestRun(t *testing.T) {
 
 func TestReleaseVersionOutput(t *testing.T) {
 	var out, stderr bytes.Buffer
-	if code := Run([]string{"version"}, &out, &stderr); code != 0 || out.String() != "ReconcileGuard v0.3.0\n" || stderr.Len() != 0 {
+	if code := Run([]string{"version"}, &out, &stderr); code != 0 || out.String() != "ReconcileGuard v0.4.0\n" || stderr.Len() != 0 {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", code, out.String(), stderr.String())
 	}
 }
