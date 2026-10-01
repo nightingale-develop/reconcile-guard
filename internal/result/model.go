@@ -19,12 +19,20 @@ type Document struct {
 }
 
 type Report struct {
-	Verdict   Verdict          `json:"verdict"`
-	Details   *Details         `json:"details,omitempty"`
-	Operators []OperatorResult `json:"operators"`
+	Verdict            Verdict          `json:"verdict"`
+	Details            *Details         `json:"details,omitempty"`
+	Operators          []OperatorResult `json:"operators"`
+	MachineConfigPools []ResourceResult `json:"machineConfigPools,omitempty"`
+	Nodes              []ResourceResult `json:"nodes,omitempty"`
 }
 
 type OperatorResult struct {
+	Name      string     `json:"name"`
+	Verdict   Verdict    `json:"verdict"`
+	Contracts []Contract `json:"contracts"`
+}
+
+type ResourceResult struct {
 	Name      string     `json:"name"`
 	Verdict   Verdict    `json:"verdict"`
 	Contracts []Contract `json:"contracts"`

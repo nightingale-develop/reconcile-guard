@@ -6,9 +6,10 @@ phases, and verifies saved runs offline. It never starts an upgrade.
 
 Included fixtures are synthetic. Live recording has been exercised on OKD and
 OpenShift Local (CRC), including ClusterVersion/ClusterOperator/MachineConfigPool/
-Node LIST/WATCH recording and final snapshots, but that does not prove lossless
-delivery, complete cluster coverage, or broad platform compatibility. See
-[real validation](docs/real-upgrade-validation.md).
+Node LIST/WATCH recording and final snapshots. v0.3.0 adds offline MCP and Node
+lifecycle analysis and conservative post-completion evidence checks. These checks
+do not prove lossless delivery, complete cluster coverage, or broad platform
+compatibility. See [real validation](docs/real-upgrade-validation.md).
 
 ## Quick start
 
@@ -36,7 +37,9 @@ completion was observed. `record-live` only records.
 
 Both commands record ClusterVersion, ClusterOperator, MachineConfigPool, and
 Node observations through read-only LIST/WATCH access and perform a final
-snapshot before run finalization.
+snapshot before run finalization. `verify-run` now analyzes recorded MCP and Node
+histories as lifecycle evidence and correlates them conservatively with the
+ClusterVersion timeline.
 
 Verification and `observe-upgrade` return `0` for PASS, `2` for FAIL, `3` for
 INCONCLUSIVE, and `1` for errors. PASS covers only the selected checks and supplied
@@ -58,10 +61,11 @@ Verification is offline and does not diagnose root causes. Sampling gaps,
 ambiguous phases, target changes, and clock differences can produce
 INCONCLUSIVE results. A run manifest checks local consistency; it does not prove
 cluster provenance or full-cluster coverage. `compare-runs` reports detected
-contract regressions, not candidate health. 
-MachineConfigPool and Node data are currently recorded as lifecycle evidence;
-the aggregate verification verdict is still based on ClusterVersion and
-ClusterOperator contracts.
+contract regressions, not candidate health.
+MachineConfigPool and Node results are evidence-only in v0.3.0. They can report
+PASS when post-completion convergence is directly supported by recorded evidence,
+but they do not create FAIL and do not change the aggregate ClusterOperator
+verification verdict.
 
 ## License
 

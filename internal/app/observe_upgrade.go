@@ -92,6 +92,11 @@ func (c cli) summarizeObservedRun(directory string, observer *upgradeObserver) i
 		fmt.Fprintln(c.stderr, "Error:", err)
 		return 1
 	}
+	auxiliary, err := verifyAuxiliaryRunEvidence(input)
+	if err != nil {
+		fmt.Fprintln(c.stderr, "Error:", err)
+		return 1
+	}
 	if observer.completed {
 		fmt.Fprintln(c.stdout, "Upgrade completion observed")
 	} else {
@@ -104,5 +109,6 @@ func (c cli) summarizeObservedRun(directory string, observer *upgradeObserver) i
 	fmt.Fprintln(c.stdout, "Final snapshot: captured")
 	fmt.Fprintln(c.stdout, "Verdict:", report.Verdict)
 	fmt.Fprintf(c.stdout, "Operators: %d (PASS=%d FAIL=%d INCONCLUSIVE=%d)\n", len(report.Operators), report.PassedOperators, report.FailedOperators, report.InconclusiveOperators)
+	fmt.Fprintf(c.stdout, "MachineConfigPools: %d, Nodes: %d (evidence-only)\n", len(auxiliary.MachineConfigPools), len(auxiliary.Nodes))
 	return contractExitCode(report.Verdict)
 }

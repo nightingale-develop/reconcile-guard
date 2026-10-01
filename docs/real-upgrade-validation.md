@@ -28,6 +28,10 @@ oc auth can-i list clusterversions.config.openshift.io
 oc auth can-i watch clusterversions.config.openshift.io
 oc auth can-i list clusteroperators.config.openshift.io
 oc auth can-i watch clusteroperators.config.openshift.io
+oc auth can-i list machineconfigpools.machineconfiguration.openshift.io
+oc auth can-i watch machineconfigpools.machineconfiguration.openshift.io
+oc auth can-i list nodes
+oc auth can-i watch nodes
 ```
 
 Review Available, Progressing, Degraded and Upgradeable conditions, nodes and
@@ -64,7 +68,7 @@ that live completion was not observed.
 ## Preserve and inspect the run
 
 ```sh
-jq '{runId,status,source,operators,error}' ./runs/REPLACE_WITH_RUN_ID/run.json
+jq '{runId,status,source,operators,machineConfigPools,nodes,error}' ./runs/REPLACE_WITH_RUN_ID/run.json
 ./reconcile-guard replay-version ./runs/REPLACE_WITH_RUN_ID/cluster-version.jsonl
 ./reconcile-guard verify-run ./runs/REPLACE_WITH_RUN_ID --output text
 ./reconcile-guard verify-run ./runs/REPLACE_WITH_RUN_ID --output json > verification.json
@@ -80,10 +84,13 @@ revision, source/target releases and any errors.
 ## Interpretation
 
 Phase names are analytical. `observedAt` is local capture time and differs
-from OpenShift `lastTransitionTime`. Independent watches, stale generations,
+from OpenShift `lastTransitionTime`. `verify-run` in v0.3.0 also reports MCP and
+Node lifecycle evidence after completion; these auxiliary verdicts do not change
+the aggregate operator verdict. Independent watches, stale generations,
 target changes, clock skew, and missing operator samples can leave a completed
-upgrade INCONCLUSIVE. Final GET ClusterVersion → LIST ClusterOperator → GET
-ClusterVersion reads provide a temporal bracket; they do not recreate missed
+upgrade INCONCLUSIVE. Final GET ClusterVersion → LIST ClusterOperator → LIST
+MachineConfigPool → LIST Node → GET ClusterVersion reads provide a temporal
+bracket; they do not recreate missed
 events or prove full-cluster health. Do not edit timestamps or append guessed
 state.
 

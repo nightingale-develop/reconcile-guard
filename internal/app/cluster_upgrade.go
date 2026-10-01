@@ -141,6 +141,6 @@ func (c cli) printClusterUpgradeReport(
 
 	fmt.Fprintln(
 		c.stdout,
-		"Scope: supplied operator histories only; PASS does not mean every ClusterOperator in the cluster was evaluated.",
+		"Operator aggregate scope: supplied operator histories only; PASS does not mean every ClusterOperator in the cluster was evaluated.",
 	)
 }

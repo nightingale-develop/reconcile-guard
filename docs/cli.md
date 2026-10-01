@@ -14,17 +14,19 @@
 | `verify-cluster-upgrade <version.jsonl> <operator.jsonl>...` | Check several operators and aggregate results. |
 | `verify-progressing <operator.jsonl> <duration>` | Apply the operator-only sampled duration check. |
 | `verify-progressing-upgrade <version.jsonl> <operator.jsonl> <policy.json>` | Apply a policy during an upgrade. |
-| `capture-live <dir> [--kubeconfig <path>]` | Capture one ClusterVersion and operator LIST. |
-| `record-live <dir> [--kubeconfig <path>]` | Record both resources through LIST/WATCH until stopped. |
+| `capture-live <dir> [--kubeconfig <path>]` | Capture one ClusterVersion plus ClusterOperator, MachineConfigPool, and Node LISTs. |
+| `record-live <dir> [--kubeconfig <path>]` | Record ClusterVersion, ClusterOperator, MachineConfigPool, and Node resources through LIST/WATCH until stopped. |
 | `observe-upgrade <dir> [--kubeconfig <path>]` | Record, stop on observed completion, finalize and verify. |
 | `verify-run <run-dir>` | Verify one stopped recording. |
 | `compare-runs <baseline-dir> <candidate-dir>` | Compare condition/version verdicts between stopped runs. |
 
 Use the current kubeconfig/context unless `--kubeconfig` is supplied. Live
-commands are read-only. Recording needs LIST/WATCH on ClusterVersion and
-ClusterOperator; final capture also needs GET on ClusterVersion. Generated runs
-contain `run.json`, a ClusterVersion JSONL stream, and per-operator streams.
-`capture-live` needs only GET ClusterVersion and LIST ClusterOperators.
+commands are read-only. Recording needs LIST/WATCH on ClusterVersion,
+ClusterOperator, MachineConfigPool, and Node resources; final capture also needs
+GET on ClusterVersion. Generated runs contain `run.json`, a ClusterVersion JSONL
+stream, per-operator streams, per-MCP streams, and per-Node streams.
+`capture-live` needs GET ClusterVersion and LIST access to ClusterOperators,
+MachineConfigPools, and Nodes.
 Client-go manages reconnect/relist. Initial Unauthorized, Forbidden, missing
 ClusterVersion and sink errors are fatal; Unauthorized after sync is retried.
 ClusterOperator deletion is ignored.
@@ -44,8 +46,8 @@ observe COMPLETED for that same target. Missed or ambiguous transitions may
 require Ctrl+C.
 
 On stop, WATCH writes drain and a fresh GET ClusterVersion → LIST all operators
-→ GET ClusterVersion bracket is captured before the run is marked stopped. The
-final API context lasts 30 seconds. Ctrl+C/SIGTERM preserves a stopped partial run when
+→ LIST MachineConfigPools → LIST Nodes → GET ClusterVersion bracket is captured
+before the run is marked stopped. The final API context lasts 30 seconds. Ctrl+C/SIGTERM preserves a stopped partial run when
 final capture succeeds; the summary says whether live completion was observed,
 even if final reads show completion later.
 Final reads append unchanged resourceVersions with fresh per-resource UTC
@@ -57,7 +59,11 @@ Both automatic and manual stopping return the saved-run verification exit code.
 ## Runs and comparison
 
 `verify-run` accepts only a locally consistent stopped run and checks conditions
-and operator-version consistency. It does not include Progressing duration.
+and operator-version consistency. When MCP/Node histories are present, it also
+reconstructs their lifecycle evidence and correlates post-completion samples with
+the ClusterVersion timeline. MCP/Node evidence does not change the aggregate
+operator verdict and does not create FAIL in v0.3.0. It does not include
+Progressing duration.
 `compare-runs` allows different clusters and targets after local validation and
 compares only condition/version contracts. PASS means no detected regression;
 FAIL→FAIL is unchanged; either INCONCLUSIVE/missing side is inconclusive. Different
@@ -65,7 +71,8 @@ operator sets are INCONCLUSIVE unless a proven regression takes precedence.
 
 ## Input and output
 
-JSONL records contain `observedAt` and either `operator` or `clusterVersion`.
+JSONL records contain `observedAt` and one of `operator`, `clusterVersion`,
+`machineConfigPool`, or `node`.
 Timestamps must be strictly increasing and nonzero. Blank lines are ignored;
 malformed JSON and oversized lines report their physical line. Unknown fields
 are ignored. `observedAt` is capture time; OpenShift `lastTransitionTime` is a

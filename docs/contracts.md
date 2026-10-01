@@ -13,8 +13,8 @@ UPDATING requires Progressing=True and Partial history without completionTime;
 STABLE requires Available=True, Progressing=False and Completed history with
 completionTime. Progressing=False alone is insufficient.
 
-Operator samples are correlated to the ClusterVersion timeline as EXACT,
-BRACKETED, AMBIGUOUS, or OUTSIDE. BRACKETED is an inference from matching
+Operator, MachineConfigPool, and Node samples can be correlated to the
+ClusterVersion timeline as EXACT, BRACKETED, AMBIGUOUS, or OUTSIDE. BRACKETED is an inference from matching
 known phase and version/image endpoints, not proof of uninterrupted state.
 
 ## Implemented checks
@@ -41,10 +41,35 @@ INCONCLUSIVE. A mismatch during UPDATING is not a failure.
 operator. Aggregate precedence is FAIL, then INCONCLUSIVE, then PASS. It does
 not evaluate every ClusterOperator unless every history is supplied.
 
-`verify-run` applies the aggregate checks to one stopped recording.
+`verify-run` applies the aggregate operator checks to one stopped recording and,
+when present, adds the evidence-only MCP and Node checks described below.
 `compare-runs` compares only those condition/version verdicts: regression is
 PASS→FAIL; FAIL→PASS is improvement; equal definite verdicts are unchanged.
 Missing or inconclusive contracts remain INCONCLUSIVE.
+
+
+### MachineConfigPool lifecycle evidence
+
+`machine-config-pool-lifecycle-evidence` classifies each recorded pool sample as
+STABLE, UPDATING, DEGRADED, or UNKNOWN. DEGRADED is based on a reported
+Degraded=True condition or a nonzero degradedMachineCount. UPDATING requires
+Updating=True. STABLE requires Updated=True, Updating=False, Degraded=False and
+consistent updated/ready/unavailable/degraded counters. Missing, Unknown, or
+contradictory evidence remains UNKNOWN.
+
+The evidence contract only evaluates confidently correlated samples at or after
+an observed ClusterVersion COMPLETED transition for the same target. At least one
+STABLE applicable sample yields PASS. Otherwise the result is INCONCLUSIVE. It
+does not emit FAIL in v0.3.0 and does not affect the aggregate operator verdict.
+
+### Node lifecycle evidence
+
+`node-lifecycle-evidence` records Node Ready status, current/desired MachineConfig
+annotations, kubelet version, and observed transitions. A post-completion sample
+is considered converged only when Ready=True and both MachineConfig annotations
+are present and equal. At least one such applicable sample yields PASS; otherwise
+the result is INCONCLUSIVE. A NotReady or non-converged sample is retained as
+evidence, not promoted to FAIL without an explicit lifecycle policy.
 
 ## Evidence limits
 

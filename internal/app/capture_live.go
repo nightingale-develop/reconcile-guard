@@ -65,6 +65,8 @@ func (c cli) captureLive(args []string) int {
 		"ClusterOperators:",
 		len(capture.Operators),
 	)
+	fmt.Fprintln(c.stdout, "MachineConfigPools:", len(capture.MachineConfigPools))
+	fmt.Fprintln(c.stdout, "Nodes:", len(capture.Nodes))
 
 	fmt.Fprintln(
 		c.stdout,

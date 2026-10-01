@@ -366,6 +366,13 @@ func validateRunManifest(manifest RunManifest) error {
 	default:
 		return fmt.Errorf("invalid run status %q", manifest.Status)
 	}
+	if len(manifest.MachineConfigPools) > 0 && manifest.Files.MachineConfigPoolsDirectory == "" {
+		return fmt.Errorf("MachineConfigPool inventory requires machineConfigPoolsDirectory")
+	}
+	if len(manifest.Nodes) > 0 && manifest.Files.NodesDirectory == "" {
+		return fmt.Errorf("Node inventory requires nodesDirectory")
+	}
+
 	paths := []string{
 		manifest.Files.ClusterVersion,
 		manifest.Files.OperatorsDirectory,

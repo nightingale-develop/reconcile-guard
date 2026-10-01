@@ -1,6 +1,7 @@
 package contracts
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/nightingale-develop/reconcile-guard/internal/result"
@@ -283,4 +284,88 @@ func resultTime(value time.Time) *time.Time {
 
 	result := value.UTC()
 	return &result
+}
+
+func MachineConfigPoolLifecycleResult(
+	report MachineConfigPoolEvidenceReport,
+) result.Contract {
+	evidence := make([]result.Evidence, 0, len(report.Evidence))
+	for _, finding := range report.Evidence {
+		state := finding.State
+		attributes := map[string]string{
+			"phase":                   string(state.Phase),
+			"generation":              fmt.Sprint(state.Generation),
+			"observedGeneration":      fmt.Sprint(state.ObservedGeneration),
+			"generationObserved":      fmt.Sprint(state.GenerationObserved),
+			"currentConfiguration":    state.CurrentConfiguration,
+			"desiredConfiguration":    state.DesiredConfiguration,
+			"machineCount":            fmt.Sprint(state.MachineCount),
+			"updatedMachineCount":     fmt.Sprint(state.UpdatedMachineCount),
+			"readyMachineCount":       fmt.Sprint(state.ReadyMachineCount),
+			"unavailableMachineCount": fmt.Sprint(state.UnavailableMachineCount),
+			"degradedMachineCount":    fmt.Sprint(state.DegradedMachineCount),
+			"upgradePhase":            string(finding.Correlation.Phase),
+			"desiredVersion":          finding.Correlation.DesiredVersion,
+			"desiredImage":            finding.Correlation.DesiredImage,
+			"applicable":              fmt.Sprint(finding.Applicable),
+		}
+		evidence = append(evidence, result.Evidence{
+			Kind:        "machine-config-pool-state",
+			ObservedAt:  resultTime(state.ObservedAt),
+			From:        resultTime(finding.Correlation.FromTime),
+			To:          resultTime(finding.Correlation.ToTime),
+			Correlation: string(finding.Correlation.Kind),
+			Attributes:  attributes,
+		})
+	}
+	return result.Contract{
+		Name:    report.Contract,
+		Verdict: report.Verdict,
+		Details: &result.Details{Counts: map[string]int{
+			"observations":     report.Observations,
+			"evaluatedSamples": report.EvaluatedSamples,
+			"uncertainSamples": report.UncertainSamples,
+			"convergedSamples": report.ConvergedSamples,
+		}},
+		Evidence: evidence,
+	}
+}
+
+func NodeLifecycleResult(
+	report NodeEvidenceReport,
+) result.Contract {
+	evidence := make([]result.Evidence, 0, len(report.Evidence))
+	for _, finding := range report.Evidence {
+		state := finding.State
+		attributes := map[string]string{
+			"ready":                string(state.Ready),
+			"currentMachineConfig": state.CurrentMachineConfig,
+			"desiredMachineConfig": state.DesiredMachineConfig,
+			"kubeletVersion":       state.KubeletVersion,
+			"configAligned":        fmt.Sprint(state.ConfigAligned),
+			"upgradePhase":         string(finding.Correlation.Phase),
+			"desiredVersion":       finding.Correlation.DesiredVersion,
+			"desiredImage":         finding.Correlation.DesiredImage,
+			"applicable":           fmt.Sprint(finding.Applicable),
+		}
+		evidence = append(evidence, result.Evidence{
+			Kind:        "node-state",
+			ObservedAt:  resultTime(state.ObservedAt),
+			From:        resultTime(finding.Correlation.FromTime),
+			To:          resultTime(finding.Correlation.ToTime),
+			Correlation: string(finding.Correlation.Kind),
+			Attributes:  attributes,
+		})
+	}
+	return result.Contract{
+		Name:    report.Contract,
+		Verdict: report.Verdict,
+		Details: &result.Details{Counts: map[string]int{
+			"observations":     report.Observations,
+			"evaluatedSamples": report.EvaluatedSamples,
+			"uncertainSamples": report.UncertainSamples,
+			"convergedSamples": report.ConvergedSamples,
+		}},
+		Evidence: evidence,
+	}
 }

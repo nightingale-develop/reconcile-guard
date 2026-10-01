@@ -305,6 +305,11 @@ func TestReadRunManifestValidation(t *testing.T) {
 		{"duplicate Node", "duplicate", func(m *RunManifest) { m.Nodes = []string{"node-0", "node-0"} }},
 		{"MCP name escape", "MachineConfigPool", func(m *RunManifest) { m.MachineConfigPools = []string{"../worker"} }},
 		{"Node name escape", "Node", func(m *RunManifest) { m.Nodes = []string{"../node-0"} }},
+		{"MCP inventory without directory", "machineConfigPoolsDirectory", func(m *RunManifest) {
+			m.MachineConfigPools = []string{"worker"}
+			m.Files.MachineConfigPoolsDirectory = ""
+		}},
+		{"Node inventory without directory", "nodesDirectory", func(m *RunManifest) { m.Nodes = []string{"node-0"}; m.Files.NodesDirectory = "" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			start := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)

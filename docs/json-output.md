@@ -12,10 +12,15 @@ Verification documents use schema version `"1"`:
 {"schemaVersion":"1","command":"verify-upgrade","result":{"verdict":"PASS","operators":[]}}
 ```
 
-Contracts may include counts, values, flags and evidence. Evidence can carry
+Contracts may include counts, values, flags and evidence. `verify-run` may also
+include optional `machineConfigPools` and `nodes` resource arrays alongside
+`operators`; this is an additive schema-version-1 extension and older runs remain
+valid. Evidence can carry
 observations, intervals, expected/actual values, correlation, reasons, messages,
 policy sources and contract-specific attributes. Empty optional fields are
-omitted. JSON summarizes the selected checks; it does not embed input snapshots.
+omitted. MCP/Node entries contain evidence-only lifecycle contracts; their verdicts do not
+change the top-level aggregate operator verdict. JSON summarizes the selected
+checks; it does not embed input snapshots.
 
 `compare-runs` uses a `comparison` envelope with baseline/candidate summaries,
 scope, contract changes and its aggregate verdict. It compares only condition and
