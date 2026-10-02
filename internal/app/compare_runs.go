@@ -242,7 +242,7 @@ func (c cli) printComparison(report regression.Report) error {
 			}
 			fmt.Fprintln(&text)
 		}
-		fmt.Fprintln(&text, "Observed timing deltas are measurements between recorded samples; they are not regression verdicts or exact transition durations.")
+		fmt.Fprintln(&text, "Observed timings are measurements between recorded samples; they are not regression verdicts or exact transition durations.")
 	}
 
 	if report.Policy != nil {

@@ -404,3 +404,33 @@ func TestCompareRunsImageOnlyTargetDifferenceSuppressesTimingDelta(t *testing.T)
 		}
 	}
 }
+
+func TestCompareRunsTimingTextAcrossTargets(t *testing.T) {
+	for _, different := range []bool{false, true} {
+		t.Run(strconv.FormatBool(different), func(t *testing.T) {
+			baseline, candidate := lifecyclePolicyAuxiliaryRunFixture(t), lifecyclePolicyAuxiliaryRunFixture(t)
+			if different {
+				for _, file := range []string{"cluster-version.jsonl", "operators/ingress.jsonl"} {
+					path := filepath.Join(candidate, file)
+					data, err := os.ReadFile(path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					writeRunTestFile(t, path, bytes.ReplaceAll(data, []byte("4.20.0"), []byte("4.21.0")))
+				}
+			}
+			var out, stderr bytes.Buffer
+			if code := Run([]string{"compare-runs", baseline, candidate}, &out, &stderr); code != 0 || stderr.Len() != 0 {
+				t.Fatalf("exit=%d stdout=%s stderr=%s", code, &out, &stderr)
+			}
+			for _, want := range []string{"Final targets match: " + strconv.FormatBool(!different), "baseline=4m0s candidate=4m0s", "Observed timings are measurements between recorded samples; they are not regression verdicts or exact transition durations."} {
+				if !strings.Contains(out.String(), want) {
+					t.Fatalf("missing %q: %s", want, &out)
+				}
+			}
+			if strings.Contains(out.String(), " delta=") == different || strings.Contains(out.String(), "[REGRESSION]") || strings.Contains(out.String(), "[IMPROVEMENT]") {
+				t.Fatalf("unexpected timing interpretation: %s", &out)
+			}
+		})
+	}
+}

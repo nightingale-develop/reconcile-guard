@@ -5,13 +5,20 @@ account, and the matching `oc` client. ReconcileGuard does not start the
 upgrade. CRC/OpenShift Local can exercise recording and reconnect behavior, but
 does not support upgrading its OpenShift version.
 
-Previous OKD runs exercised recording, final capture and operator-version checks;
-CRC stop/start exercised reconnect/relist, including transient Unauthorized recovery.
+Two real OKD SNO upgrades were recorded and analyzed:
+
+- `4.20.0-0.okd-scos-2026-02-07-001639` → `4.21.0-okd-scos.11`.
+- `4.21.0-okd-scos.11` → `4.22.0-okd-scos.10`.
+
+Validation exercised upgrade completion, API outages/reboots, WATCH reconnect,
+final snapshots, operator versions, MCP transitions, Node Ready/config convergence,
+and kubelet version changes. It also covered automatic `observe-upgrade`
+completion, post-completion recording with `record-live`, lifecycle policies,
+timelines, Markdown reports, run comparison, and deterministic JSON output.
+CRC stop/start additionally exercised transient Unauthorized recovery.
 Real expired-resourceVersion recovery was not independently demonstrated.
-These runs did not validate automatic
-`observe-upgrade` completion. A real observer run is required before claiming
-that behavior is validated. These observations do not prove lossless delivery,
-complete coverage, causality, or platform compatibility.
+These scenarios do not prove lossless delivery, complete coverage, causality,
+or compatibility with every OpenShift version or topology.
 
 ## Before the upgrade
 
@@ -92,9 +99,7 @@ Phase names are analytical. `observedAt` is local capture time and differs
 from OpenShift `lastTransitionTime`. `verify-run` reports MCP and Node lifecycle
 evidence after completion; these auxiliary verdicts do not change the aggregate
 operator verdict. A user-supplied lifecycle policy can additionally be applied
-with `verify-lifecycle-policy`. These threshold-based checks have not yet been
-validated through a new real upgrade cycle; their thresholds remain user policy,
-not OpenShift guarantees.
+with `verify-lifecycle-policy`. Their thresholds remain user policy, not OpenShift guarantees.
 `timeline-run` and `report-run` can be used to review the recorded ordering and
 produce an archival Markdown summary without adding new lifecycle assertions.
 Independent watches, stale generations,

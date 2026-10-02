@@ -4,7 +4,8 @@ Read-only OpenShift lifecycle analysis. The CLI records ClusterVersion,
 ClusterOperator, MachineConfigPool, and Node observations, reconstructs upgrade
 phases, and verifies saved runs offline. It never starts an upgrade.
 
-Included fixtures are synthetic. Live recording has been exercised on OKD and
+Included fixtures are synthetic. Two real OKD SNO upgrades have been recorded and analyzed.
+Live recording has been exercised on OKD and
 OpenShift Local (CRC), including ClusterVersion/ClusterOperator/MachineConfigPool/
 Node LIST/WATCH recording and final snapshots. Offline verification includes MCP
 and Node lifecycle evidence, conservative upgrade correlation, and optional
@@ -78,6 +79,7 @@ cluster provenance or full-cluster coverage. `compare-runs` compares operator
 contracts, reports MCP/Node evidence and recorded timing deltas, and can compare
 explicit lifecycle-policy verdicts when `--policy` is supplied. Descriptive
 timing and evidence differences do not become regressions by themselves.
+Timing deltas are omitted when final desired versions or images differ.
 The base `verify-run` MCP/Node checks remain evidence-only and do not change the
 aggregate operator verdict. Policy FAILs require thresholds in the supplied
 policy. Timeline and Markdown rendering do not add verdict semantics.

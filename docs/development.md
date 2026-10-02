@@ -38,7 +38,7 @@ The live commands share run creation/shutdown; the observer reuses AnalyzePhases
 and verify-run's loader/checks. Collector owns API reads, not contract decisions.
 Tests cover lifecycle analysis, MCP/Node evidence correlation, explicit policy parsing/evaluation, signals, final snapshots, exits and HTTP 401/403 on a fake API.
 
-## Limits and next work
+## Limits
 
 OpenShift integration has limited validation; kind is not an OpenShift
 substitute. There is no root-cause diagnosis or provenance proof. Sampling gaps,
@@ -47,6 +47,6 @@ have no built-in thresholds. Timeline and Markdown reporting are presentation
 layers over recorded evidence and existing verdicts; they do not infer missing
 state. Run-to-run comparison includes operator contracts, evidence-only MCP/Node
 differences, descriptive observed timing, and optional explicit-policy
-regressions. Remaining work includes real automatic observer completion
-validation, additional expired-resourceVersion validation, and
-release/compatibility automation.
+regressions. Real OKD SNO validation includes automatic observer completion;
+see [real upgrade validation](real-upgrade-validation.md) for the tested scope.
+Expired-resourceVersion recovery has not been independently validated on a real API.
