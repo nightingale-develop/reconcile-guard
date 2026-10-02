@@ -1,6 +1,8 @@
 package recording
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -13,6 +15,47 @@ import (
 	"github.com/nightingale-develop/reconcile-guard/internal/operator"
 	"github.com/nightingale-develop/reconcile-guard/internal/upgrade"
 )
+
+func TestJSONLRecorderRejectsSymlinkEscape(t *testing.T) {
+	for _, directoryLink := range []bool{false, true} {
+		t.Run(fmt.Sprint(directoryLink), func(t *testing.T) {
+			directory, outside := t.TempDir(), t.TempDir()
+			target := filepath.Join(outside, "ingress.jsonl")
+			original := []byte("keep me\n")
+			if err := os.WriteFile(target, original, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if directoryLink {
+				if err := os.Symlink(outside, filepath.Join(directory, "operators")); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err := os.Mkdir(filepath.Join(directory, "operators"), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, filepath.Join(directory, "operators", "ingress.jsonl")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			recorder, err := NewJSONLRecorder(directory)
+			if err == nil {
+				observation := operator.Observation{}
+				observation.Operator.Name = "ingress"
+				err = recorder.AppendOperator(observation)
+			}
+			if err == nil {
+				t.Fatal("symlink escape accepted")
+			}
+			got, err := os.ReadFile(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, original) {
+				t.Fatalf("outside file modified: %q", got)
+			}
+		})
+	}
+}
 
 func TestAppendCapture(t *testing.T) {
 	directory := t.TempDir()

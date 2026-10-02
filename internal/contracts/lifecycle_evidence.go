@@ -75,7 +75,7 @@ func VerifyMachineConfigPoolLifecycleEvidence(versions []upgrade.ClusterVersionO
 		Verdict:      ContractInconclusive,
 		Observations: lifecycle.Observations,
 	}
-	completed := completedTargets(states)
+	windows := completedLifecycleWindows(states)
 
 	for _, state := range lifecycle.States {
 		correlation, err := CorrelateTime(states, state.ObservedAt)
@@ -88,9 +88,7 @@ func VerifyMachineConfigPoolLifecycleEvidence(versions []upgrade.ClusterVersionO
 			report.Evidence = append(report.Evidence, finding)
 			continue
 		}
-		key := targetKey(correlation.DesiredVersion, correlation.DesiredImage)
-		completedAt, ok := completed[key]
-		if !ok || state.ObservedAt.Before(completedAt) || (correlation.Phase != upgrade.UpgradePhaseCompleted && correlation.Phase != upgrade.UpgradePhaseStable) {
+		if _, ok := lifecycleWindowAt(windows, state.ObservedAt, correlation.DesiredVersion, correlation.DesiredImage); !ok {
 			report.Evidence = append(report.Evidence, finding)
 			continue
 		}
@@ -124,7 +122,7 @@ func VerifyNodeLifecycleEvidence(versions []upgrade.ClusterVersionObservation, o
 		Verdict:      ContractInconclusive,
 		Observations: lifecycle.Observations,
 	}
-	completed := completedTargets(states)
+	windows := completedLifecycleWindows(states)
 
 	for _, state := range lifecycle.States {
 		correlation, err := CorrelateTime(states, state.ObservedAt)
@@ -137,9 +135,7 @@ func VerifyNodeLifecycleEvidence(versions []upgrade.ClusterVersionObservation, o
 			report.Evidence = append(report.Evidence, finding)
 			continue
 		}
-		key := targetKey(correlation.DesiredVersion, correlation.DesiredImage)
-		completedAt, ok := completed[key]
-		if !ok || state.ObservedAt.Before(completedAt) || (correlation.Phase != upgrade.UpgradePhaseCompleted && correlation.Phase != upgrade.UpgradePhaseStable) {
+		if _, ok := lifecycleWindowAt(windows, state.ObservedAt, correlation.DesiredVersion, correlation.DesiredImage); !ok {
 			report.Evidence = append(report.Evidence, finding)
 			continue
 		}
@@ -198,18 +194,34 @@ func CorrelateTime(states []upgrade.UpgradeState, observedAt time.Time) (Timelin
 	return result, nil
 }
 
-func completedTargets(states []upgrade.UpgradeState) map[string]time.Time {
-	result := make(map[string]time.Time)
-	for _, state := range states {
+type lifecycleCompletionWindow struct {
+	From, To       time.Time
+	Version, Image string
+}
+
+func completedLifecycleWindows(states []upgrade.UpgradeState) []lifecycleCompletionWindow {
+	var windows []lifecycleCompletionWindow
+	for i, state := range states {
 		if state.Phase != upgrade.UpgradePhaseCompleted {
 			continue
 		}
-		key := targetKey(state.DesiredVersion, state.DesiredImage)
-		if previous, ok := result[key]; !ok || state.ObservedAt.Before(previous) {
-			result[key] = state.ObservedAt
+		window := lifecycleCompletionWindow{From: state.ObservedAt, To: state.ObservedAt, Version: state.DesiredVersion, Image: state.DesiredImage}
+		for _, next := range states[i+1:] {
+			if next.Phase != upgrade.UpgradePhaseStable || next.DesiredVersion != window.Version || next.DesiredImage != window.Image {
+				break
+			}
+			window.To = next.ObservedAt
 		}
+		windows = append(windows, window)
 	}
-	return result
+	return windows
 }
 
-func targetKey(version, image string) string { return version + "\x00" + image }
+func lifecycleWindowAt(windows []lifecycleCompletionWindow, at time.Time, version, image string) (lifecycleCompletionWindow, bool) {
+	for _, window := range windows {
+		if window.Version == version && window.Image == image && !at.Before(window.From) && !at.After(window.To) {
+			return window, true
+		}
+	}
+	return lifecycleCompletionWindow{}, false
+}

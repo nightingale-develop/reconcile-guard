@@ -28,7 +28,7 @@ func (c cli) run(args []string) int {
 		!supportsStructuredOutput(args[0]) {
 		fmt.Fprintln(
 			c.stderr,
-			"Error: --output is supported only by verify commands or compare-runs",
+			"Error: --output is supported only by verify commands, compare-runs, or timeline-run",
 		)
 		return 1
 	}
@@ -248,6 +248,13 @@ func (c cli) run(args []string) int {
 
 	case "verify-run":
 		return c.verifyRun(args)
+
+	case "timeline-run":
+		return c.timelineRun(args)
+
+	case "report-run":
+		return c.reportRun(args)
+
 	case "compare-runs":
 		return c.compareRuns(args)
 
@@ -311,5 +318,30 @@ type cli struct {
 }
 
 func Run(args []string, stdout, stderr io.Writer) int {
-	return (cli{stdout: stdout, stderr: stderr}).run(args)
+	output := &outputWriter{writer: stdout}
+	code := (cli{stdout: output, stderr: stderr}).run(args)
+	if output.err != nil {
+		if code != 1 {
+			fmt.Fprintln(stderr, "Error: write output:", output.err)
+		}
+		return 1
+	}
+	return code
+}
+
+type outputWriter struct {
+	writer io.Writer
+	err    error
+}
+
+func (w *outputWriter) Write(data []byte) (int, error) {
+	if w.err != nil {
+		return 0, w.err
+	}
+	n, err := w.writer.Write(data)
+	if err == nil && n != len(data) {
+		err = io.ErrShortWrite
+	}
+	w.err = err
+	return n, err
 }

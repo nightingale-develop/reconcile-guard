@@ -88,10 +88,13 @@ revision, source/target releases and any errors.
 Phase names are analytical. `observedAt` is local capture time and differs
 from OpenShift `lastTransitionTime`. `verify-run` reports MCP and Node lifecycle
 evidence after completion; these auxiliary verdicts do not change the aggregate
-operator verdict. v0.4.0 can additionally apply a user-supplied lifecycle policy
-with `verify-lifecycle-policy`, but those threshold-based policy checks have not
-yet been validated through a new real upgrade cycle and must not be presented as
-OpenShift product guarantees. Independent watches, stale generations,
+operator verdict. A user-supplied lifecycle policy can additionally be applied
+with `verify-lifecycle-policy`. These threshold-based checks have not yet been
+validated through a new real upgrade cycle; their thresholds remain user policy,
+not OpenShift guarantees.
+`timeline-run` and `report-run` can be used to review the recorded ordering and
+produce an archival Markdown summary without adding new lifecycle assertions.
+Independent watches, stale generations,
 target changes, clock skew, and missing operator samples can leave a completed
 upgrade INCONCLUSIVE. Final GET ClusterVersion → LIST ClusterOperator → LIST
 MachineConfigPool → LIST Node → GET ClusterVersion reads provide a temporal

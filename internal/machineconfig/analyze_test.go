@@ -94,3 +94,38 @@ func TestAnalyzeLifecycleStaleGenerationIsUnknown(t *testing.T) {
 		t.Fatalf("state=%+v", report.States[0])
 	}
 }
+
+func TestAnalyzeHistoryRejectsDuplicateLifecycleCondition(t *testing.T) {
+	base := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	observation := poolObservation(t, base, "True", "False", "False", 1, 1, 1, 0, 0, "rendered-a", "rendered-a")
+	observation.Pool.Status.Conditions = append(observation.Pool.Status.Conditions, machineconfigv1.MachineConfigPoolCondition{Type: machineconfigv1.MachineConfigPoolUpdated, Status: "False"})
+	if _, err := AnalyzeHistory([]Observation{observation}); err == nil {
+		t.Fatal("accepted duplicate Updated condition")
+	}
+}
+
+func TestAnalyzeHistoryRejectsUnsupportedTypeMeta(t *testing.T) {
+	base := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	observation := poolObservation(t, base, "True", "False", "False", 1, 1, 1, 0, 0, "rendered-a", "rendered-a")
+	observation.Pool.Kind = "MachineConfig"
+	if _, err := AnalyzeHistory([]Observation{observation}); err == nil {
+		t.Fatal("accepted unsupported MachineConfigPool kind")
+	}
+}
+
+func TestAnalyzeLifecycleRejectsMalformedStatus(t *testing.T) {
+	base := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	for _, observation := range []Observation{
+		poolObservation(t, base, "True", "False", "False", -1, -1, -1, 0, 0, "a", "a"),
+		poolObservation(t, base, "invalid", "True", "False", 1, 0, 0, 0, 0, "a", "b"),
+	} {
+		if _, err := AnalyzeLifecycle([]Observation{observation}); err == nil {
+			t.Fatal("malformed evidence accepted")
+		}
+	}
+	zero := poolObservation(t, base, "True", "False", "False", 0, 0, 0, 0, 0, "a", "a")
+	report, err := AnalyzeLifecycle([]Observation{zero})
+	if err != nil || report.States[0].Phase != PhaseStable {
+		t.Fatalf("valid zero-machine pool rejected: %+v %v", report, err)
+	}
+}

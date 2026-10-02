@@ -103,6 +103,32 @@ source: test-policy
 	}
 }
 
+func TestVerifyLifecyclePolicyMissingAuxiliaryResources(t *testing.T) {
+	dir := verifyRunFixture(t)
+	path := writeLifecyclePolicy(t, `apiVersion: reconcileguard.io/v1alpha1
+kind: UpgradePolicy
+targetVersion: 4.20.0
+source: test-policy
+machineConfigPools:
+  absent-pool:
+    postCompletionGracePeriod: 1m
+nodes:
+  absent-node:
+    readyPostCompletionGracePeriod: 1m
+`)
+	var out, stderr bytes.Buffer
+	if code := Run([]string{"verify-lifecycle-policy", dir, path, "--output=json"}, &out, &stderr); code != 3 {
+		t.Fatalf("exit=%d stdout=%s stderr=%s", code, &out, &stderr)
+	}
+	var doc result.Document
+	if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Result.Verdict != result.VerdictInconclusive || len(doc.Result.MachineConfigPools) != 1 || len(doc.Result.Nodes) != 1 || doc.Result.MachineConfigPools[0].Verdict != result.VerdictInconclusive || doc.Result.Nodes[0].Verdict != result.VerdictInconclusive {
+		t.Fatalf("missing policy scope silently passed: %+v", doc.Result)
+	}
+}
+
 func lifecyclePolicyAuxiliaryRunFixture(t *testing.T) string {
 	t.Helper()
 	start := time.Date(2026, 9, 30, 9, 59, 0, 0, time.UTC)

@@ -82,7 +82,7 @@ func parseOutputOption(
 }
 
 func supportsStructuredOutput(command string) bool {
-	return strings.HasPrefix(command, "verify-") || command == "compare-runs"
+	return strings.HasPrefix(command, "verify-") || command == "compare-runs" || command == "timeline-run"
 }
 
 func (c cli) writeJSON(

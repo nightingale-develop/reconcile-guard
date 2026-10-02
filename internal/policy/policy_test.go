@@ -46,6 +46,24 @@ nodes:
 	}
 }
 
+func TestParseRejectsExplicitZeroNodeOverride(t *testing.T) {
+	_, err := Parse([]byte(`apiVersion: reconcileguard.io/v1alpha1
+kind: UpgradePolicy
+targetVersion: 4.20.0
+source: test
+defaults:
+  node:
+    readyPostCompletionGracePeriod: 5m
+nodes:
+  worker-0:
+    readyPostCompletionGracePeriod: 0s
+    configAlignedPostCompletionGracePeriod: 1m
+`))
+	if err == nil {
+		t.Fatal("explicit zero override silently inherited default")
+	}
+}
+
 func TestParsePolicyRejectsUnknownAndMissingRules(t *testing.T) {
 	for _, input := range []string{
 		`apiVersion: reconcileguard.io/v1alpha1
@@ -71,5 +89,23 @@ defaults:
 		if _, err := Parse([]byte(input)); err == nil {
 			t.Fatalf("expected error for %q", input)
 		}
+	}
+}
+
+func TestParsePolicyRejectsInvalidDurations(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{"malformed gap", `{"apiVersion":"reconcileguard.io/v1alpha1","kind":"UpgradePolicy","targetVersion":"4.22.0","source":"test","maxObservationGap":"not-a-duration","defaults":{"degraded":{"maxObservedDuration":"1m"}}}`},
+		{"zero rule", `{"apiVersion":"reconcileguard.io/v1alpha1","kind":"UpgradePolicy","targetVersion":"4.22.0","source":"test","maxObservationGap":"1m","defaults":{"degraded":{"maxObservedDuration":"0s"}}}`},
+		{"negative rule", `{"apiVersion":"reconcileguard.io/v1alpha1","kind":"UpgradePolicy","targetVersion":"4.22.0","source":"test","maxObservationGap":"1m","defaults":{"degraded":{"maxObservedDuration":"-1s"}}}`},
+		{"negative pool grace", `{"apiVersion":"reconcileguard.io/v1alpha1","kind":"UpgradePolicy","targetVersion":"4.22.0","source":"test","defaults":{"machineConfigPool":{"postCompletionGracePeriod":"-1s"}}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := Parse([]byte(tc.body)); err == nil {
+				t.Fatal("expected invalid duration error")
+			}
+		})
 	}
 }

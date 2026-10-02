@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/nightingale-develop/reconcile-guard/internal/machineconfig"
 	nodehistory "github.com/nightingale-develop/reconcile-guard/internal/node"
@@ -40,6 +41,7 @@ func evidenceNode(t *testing.T, atIndex int, ready corev1.ConditionStatus, curre
 	return nodehistory.Observation{
 		ObservedAt: versions[atIndex].ObservedAt,
 		Node: corev1.Node{
+			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Node"},
 			ObjectMeta: metav1.ObjectMeta{Name: "node-0", Annotations: map[string]string{
 				nodehistory.CurrentMachineConfigAnnotation: current,
 				nodehistory.DesiredMachineConfigAnnotation: desired,
@@ -121,5 +123,39 @@ func TestNodeLifecycleEvidenceDoesNotFailNotReady(t *testing.T) {
 	}
 	if report.Verdict != ContractInconclusive {
 		t.Fatalf("verdict=%s", report.Verdict)
+	}
+}
+
+func TestLifecycleEvidenceDoesNotReuseCompletionAcrossBreak(t *testing.T) {
+	for _, change := range []string{"unknown", "target", "image"} {
+		t.Run(change, func(t *testing.T) {
+			versions, _ := lifecycleInputs(t)
+			switch change {
+			case "unknown":
+				versions[5].ClusterVersion.Status.Conditions = nil
+			case "target":
+				versions[5].ClusterVersion.Status.Desired.Version = "4.21.0"
+				versions[5].ClusterVersion.Status.History[0].Version = "4.21.0"
+			case "image":
+				versions[5].ClusterVersion.Status.Desired.Image = "other-image"
+				versions[5].ClusterVersion.Status.History[0].Image = "other-image"
+			}
+			pool, err := VerifyMachineConfigPoolLifecycleEvidence(versions, []machineconfig.Observation{evidencePool(t, 6, true)})
+			if err != nil || pool.Verdict != ContractInconclusive || pool.EvaluatedSamples != 0 {
+				t.Fatalf("pool=%+v err=%v", pool, err)
+			}
+			node, err := VerifyNodeLifecycleEvidence(versions, []nodehistory.Observation{evidenceNode(t, 6, corev1.ConditionTrue, "b", "b")})
+			if err != nil || node.Verdict != ContractInconclusive || node.EvaluatedSamples != 0 {
+				t.Fatalf("node=%+v err=%v", node, err)
+			}
+			earlier, err := VerifyMachineConfigPoolLifecycleEvidence(versions, []machineconfig.Observation{evidencePool(t, 4, true)})
+			if err != nil || earlier.Verdict != ContractPass {
+				t.Fatalf("lost earlier completion evidence: %+v %v", earlier, err)
+			}
+			policy, err := VerifyNodeReadyPostCompletionPolicy(versions, []nodehistory.Observation{evidenceNode(t, 6, corev1.ConditionFalse, "b", "b")}, "4.20.0", "", "test", time.Minute)
+			if err != nil || policy.Verdict != ContractInconclusive || policy.ViolatingSamples != 0 {
+				t.Fatalf("policy=%+v err=%v", policy, err)
+			}
+		})
 	}
 }

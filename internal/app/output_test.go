@@ -3,11 +3,36 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/nightingale-develop/reconcile-guard/internal/result"
 )
+
+func TestCLIPropagatesTextOutputErrors(t *testing.T) {
+	for _, args := range [][]string{
+		{"version"}, {"help"},
+		{"verify-run", verifyRunFixture(t)},
+		{"report-run", verifyRunFixture(t), "--file", filepath.Join(t.TempDir(), "report.md")},
+	} {
+		var stderr bytes.Buffer
+		if code := Run(args, comparisonErrorWriter{}, &stderr); code != 1 || stderr.Len() == 0 {
+			t.Fatalf("args=%v exit=%d stderr=%s", args, code, &stderr)
+		}
+	}
+}
+
+type shortOutputWriter struct{}
+
+func (shortOutputWriter) Write(data []byte) (int, error) { return len(data) - 1, nil }
+
+func TestCLIRejectsShortOutputWrite(t *testing.T) {
+	var stderr bytes.Buffer
+	if code := Run([]string{"version"}, shortOutputWriter{}, &stderr); code != 1 || !strings.Contains(stderr.String(), "short write") {
+		t.Fatalf("exit=%d stderr=%s", code, &stderr)
+	}
+}
 
 func TestClusterUpgradeJSONOutput(t *testing.T) {
 	var stdout bytes.Buffer
@@ -240,7 +265,7 @@ func TestOutputRejectedForNonVerifyCommand(
 
 	if !strings.Contains(
 		stderr.String(),
-		"supported only by verify commands",
+		"supported only by verify commands, compare-runs, or timeline-run",
 	) {
 		t.Fatalf(
 			"unexpected stderr: %s",

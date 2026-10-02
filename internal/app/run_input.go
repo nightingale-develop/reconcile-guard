@@ -132,7 +132,12 @@ func loadOperatorHistories(directory string, manifest recording.RunManifest) ([]
 
 func loadMachineConfigPoolHistories(directory string, manifest recording.RunManifest) ([][]machineconfig.Observation, error) {
 	if len(manifest.MachineConfigPools) == 0 {
-		return nil, nil
+		if manifest.Files.MachineConfigPoolsDirectory == "" {
+			return nil, nil
+		}
+		if _, err := os.Lstat(filepath.Join(directory, manifest.Files.MachineConfigPoolsDirectory)); os.IsNotExist(err) {
+			return nil, nil
+		}
 	}
 	if manifest.Files.MachineConfigPoolsDirectory == "" {
 		return nil, fmt.Errorf("run manifest lists MachineConfigPools without a history directory")
@@ -182,7 +187,12 @@ func loadMachineConfigPoolHistories(directory string, manifest recording.RunMani
 
 func loadNodeHistories(directory string, manifest recording.RunManifest) ([][]nodehistory.Observation, error) {
 	if len(manifest.Nodes) == 0 {
-		return nil, nil
+		if manifest.Files.NodesDirectory == "" {
+			return nil, nil
+		}
+		if _, err := os.Lstat(filepath.Join(directory, manifest.Files.NodesDirectory)); os.IsNotExist(err) {
+			return nil, nil
+		}
 	}
 	if manifest.Files.NodesDirectory == "" {
 		return nil, fmt.Errorf("run manifest lists Nodes without a history directory")

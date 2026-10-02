@@ -221,6 +221,22 @@ func TestVerifyRunUsage(t *testing.T) {
 	}
 }
 
+func TestRunInputRejectsUnlistedAuxiliaryHistoriesWithEmptyInventory(t *testing.T) {
+	for _, resource := range []string{"machine-config-pools", "nodes"} {
+		t.Run(resource, func(t *testing.T) {
+			dir := verifyRunFixture(t)
+			path := filepath.Join(dir, resource)
+			if err := os.Mkdir(path, 0755); err != nil {
+				t.Fatal(err)
+			}
+			writeRunTestFile(t, filepath.Join(path, "unexpected.jsonl"), []byte("{}\n"))
+			if _, err := loadRunInput(dir); err == nil || !strings.Contains(err.Error(), "not listed in manifest") {
+				t.Fatalf("unlisted evidence silently ignored: %v", err)
+			}
+		})
+	}
+}
+
 func TestVerifyRunRejectsMixedClusterEvidence(t *testing.T) {
 	for _, tc := range []struct{ name, first, rest, manifest string }{
 		{"manifest mismatch", "cluster-a", "cluster-a", "cluster-b"},

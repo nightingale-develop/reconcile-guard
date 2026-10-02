@@ -78,7 +78,7 @@ Reports describe supplied snapshots and intervals. They do not infer unsampled
 state, prove uninterrupted availability, diagnose causes, or establish cluster
 provenance. Preserve the original JSONL files with reports.
 
-## Explicit lifecycle policies (v0.4.0)
+## Explicit lifecycle policies
 
 `verify-lifecycle-policy` turns selected lifecycle evidence into policy verdicts
 only when the user supplies thresholds. The policy is versioned as
@@ -98,8 +98,9 @@ Each rule has `maxObservedDuration`. A directly observed adverse span beyond the
 threshold is FAIL. A shorter adverse episode is PASS only when known good samples
 before and after bound the sampled episode inside the threshold. An open-ended
 short episode is INCONCLUSIVE. Missing/Unknown conditions, ambiguous correlation,
-target changes, and gaps larger than `maxObservationGap` break the episode and
-preserve uncertainty instead of bridging it.
+target version/image changes, UNKNOWN ClusterVersion states, oversized brackets,
+and gaps larger than `maxObservationGap` break the episode and preserve
+uncertainty instead of bridging it. A zero duration is invalid policy input.
 
 These are project policies, not claims that OpenShift requires a ClusterOperator
 to recover within the configured duration.
@@ -108,8 +109,12 @@ to recover within the configured duration.
 
 `postCompletionGracePeriod` delays policy enforcement until that interval has
 elapsed after an observed ClusterVersion COMPLETED transition for the policy
-target. After the deadline, confidently correlated MCP samples are evaluated as
-sampled state:
+target. UNKNOWN, target changes, and other phase boundaries end the current
+window. Only a newly observed COMPLETED transition for the target starts a new
+grace window; earlier valid findings are retained separately. Applicable-window
+evidence includes its completion and deadline. After the deadline, confidently
+correlated MCP samples are
+evaluated as sampled state:
 
 - STABLE is compliant;
 - UPDATING or DEGRADED is a direct policy violation and yields FAIL;
@@ -125,7 +130,9 @@ Nodes can configure independent `readyPostCompletionGracePeriod` and
 deadline, a confidently correlated `Ready=False` sample or directly observed
 current/desired MachineConfig divergence is FAIL. Ready=Unknown or missing
 MachineConfig annotations are INCONCLUSIVE. PASS describes sampled compliance
-only and does not infer unsampled continuity.
+only and does not infer unsampled continuity. Node and MCP records with invalid
+condition statuses or duplicate conditions are invalid input; negative MCP
+counts are invalid as well.
 
 Policy results are separate from the evidence-only MCP/Node contracts emitted by
 `verify-run`. `verify-lifecycle-policy` aggregates only policy contracts with

@@ -22,12 +22,7 @@ func (c cli) verifyLifecyclePolicy(args []string) int {
 		fmt.Fprintln(c.stderr, "Error:", err)
 		return 1
 	}
-	data, err := os.ReadFile(args[2])
-	if err != nil {
-		fmt.Fprintln(c.stderr, "Error: read policy:", err)
-		return 1
-	}
-	configured, err := policy.Parse(data)
+	configured, err := readLifecyclePolicy(args[2])
 	if err != nil {
 		fmt.Fprintln(c.stderr, "Error:", err)
 		return 1
@@ -46,6 +41,18 @@ func (c cli) verifyLifecyclePolicy(args []string) int {
 		c.printLifecyclePolicyReport(configured, report)
 	}
 	return policyExitCode(report.Verdict)
+}
+
+func readLifecyclePolicy(path string) (policy.UpgradePolicy, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return policy.UpgradePolicy{}, fmt.Errorf("read policy: %w", err)
+	}
+	configured, err := policy.Parse(data)
+	if err != nil {
+		return policy.UpgradePolicy{}, err
+	}
+	return configured, nil
 }
 
 func evaluateLifecyclePolicy(input runInput, configured policy.UpgradePolicy) (result.Report, error) {

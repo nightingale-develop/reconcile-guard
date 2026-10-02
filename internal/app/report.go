@@ -112,7 +112,7 @@ func (c cli) printUsage() {
 		"  verify-cluster-upgrade <version.jsonl> <operator.jsonl>...  Verify multiple operators and print an aggregate upgrade report",
 	)
 	fmt.Fprintln(c.stdout,
-		"  Verification commands and compare-runs support --output text|json",
+		"  Verification commands, compare-runs, and timeline-run support --output text|json",
 	)
 
 	fmt.Fprintln(c.stdout,
@@ -128,6 +128,12 @@ func (c cli) printUsage() {
 	)
 	fmt.Fprintln(c.stdout,
 		"  verify-run <run-directory>  Verify all operator histories from a recorded run",
+	)
+	fmt.Fprintln(c.stdout,
+		"  timeline-run <run-directory>  Show a merged ClusterVersion/operator/MCP/Node timeline",
+	)
+	fmt.Fprintln(c.stdout,
+		"  report-run <run-directory> [--policy <policy.yaml>] [--file <report.md>]  Render a Markdown run report",
 	)
 	fmt.Fprintln(c.stdout,
 		"  compare-runs <baseline-run-directory> <candidate-run-directory>  Compare contract verdicts for regressions",

@@ -29,6 +29,7 @@ The race detector needs a supported platform and C toolchain.
 | `internal/recording/` | Run manifests and JSONL persistence. |
 | `internal/regression/` | Compare computed contract verdicts. |
 | `internal/result/` | Shared verification output model. |
+| `internal/timeline/` | Deterministic merged lifecycle timeline model and builder. |
 | `examples/` | Synthetic histories and example policy. |
 
 Pipeline: observations → validated timelines → phases → correlation → checks →
@@ -42,7 +43,9 @@ Tests cover lifecycle analysis, MCP/Node evidence correlation, explicit policy p
 OpenShift integration has limited validation; kind is not an OpenShift
 substitute. There is no root-cause diagnosis or provenance proof. Sampling gaps,
 watch failures and clock differences remain material. Explicit lifecycle policies
-are implemented in v0.4.0 with no built-in thresholds. Future work includes
-human-readable timeline/Markdown reports, real automatic observer completion and
-additional expired-resourceVersion validation. Run manifests, MCP/Node evidence
-analysis, and comparable-run analysis are already implemented.
+have no built-in thresholds. Timeline and Markdown reporting are presentation
+layers over recorded evidence and existing verdicts; they do not infer missing
+state. Future work includes richer run-to-run regression analysis, real automatic
+observer completion validation, additional expired-resourceVersion validation,
+and release/compatibility automation. Run manifests, MCP/Node evidence analysis,
+and comparable-run analysis are already implemented.

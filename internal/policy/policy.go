@@ -31,6 +31,9 @@ func (d *Duration) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("invalid duration %q: %w", raw, err)
 	}
+	if value <= 0 {
+		return fmt.Errorf("duration %q must be positive", raw)
+	}
 	d.Duration = value
 	return nil
 }

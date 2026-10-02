@@ -19,6 +19,8 @@
 | `record-live <dir> [--kubeconfig <path>]` | Record ClusterVersion, ClusterOperator, MachineConfigPool, and Node resources through LIST/WATCH until stopped. |
 | `observe-upgrade <dir> [--kubeconfig <path>]` | Record, stop on observed completion, finalize and verify. |
 | `verify-run <run-dir>` | Verify one stopped recording. |
+| `timeline-run <run-dir>` | Merge ClusterVersion phase changes and recorded operator/MCP/Node transitions into one ordered timeline. |
+| `report-run <run-dir> [--policy <policy.yaml>] [--file <report.md>]` | Render a Markdown report from one stopped run. |
 | `compare-runs <baseline-dir> <candidate-dir>` | Compare condition/version verdicts between stopped runs. |
 
 Use the current kubeconfig/context unless `--kubeconfig` is supplied. Live
@@ -56,7 +58,6 @@ timestamps; WATCH still deduplicates them. Final API/write errors mark the run
 failed and exit `1`. After success, the summary includes run/cluster IDs, target
 version/image, completion flag, final snapshot status and operator verdict counts.
 Both automatic and manual stopping return the saved-run verification exit code.
-
 
 ## Explicit lifecycle policy
 
@@ -97,6 +98,34 @@ from the run is INCONCLUSIVE. There are no built-in duration defaults. Policy
 thresholds are user-supplied project rules, not OpenShift guarantees. Aggregate
 policy precedence is FAIL, then INCONCLUSIVE, then PASS.
 
+## Timeline and Markdown report
+
+```sh
+./reconcile-guard timeline-run ./runs/REPLACE_WITH_RUN_ID
+./reconcile-guard timeline-run ./runs/REPLACE_WITH_RUN_ID --output json > timeline.json
+
+./reconcile-guard report-run ./runs/REPLACE_WITH_RUN_ID --file report.md
+./reconcile-guard report-run ./runs/REPLACE_WITH_RUN_ID \
+  --policy examples/lifecycle-policy.yaml --file report-with-policy.md
+```
+
+`timeline-run` uses the same stopped-run validation as `verify-run`. It emits a
+deterministically ordered view of ClusterVersion phase/target changes,
+ClusterOperator condition transitions, MachineConfigPool lifecycle/configuration
+transitions, and Node Ready/MachineConfig/kubelet transitions. Exact observations
+retain `observedAt`; transitions retain their `[from,to]` observation interval.
+The command does not replace an interval with an inferred exact event timestamp.
+Text and JSON output are available, and successful rendering exits `0`.
+
+`report-run` renders Markdown to stdout by default. `--file` writes the report to
+the supplied path. `--policy` optionally evaluates an explicit `UpgradePolicy`
+and includes its existing policy verdicts in the report. The report contains run
+metadata, aggregate verification results, per-resource summaries, the merged
+timeline, and scope/interpretation notes. Report generation is a presentation
+operation and exits `0` when rendering succeeds even when the embedded
+verification or policy verdict is FAIL or INCONCLUSIVE. It does not create new
+verdict semantics.
+
 ## Runs and comparison
 
 `verify-run` accepts only a locally consistent stopped run and checks conditions
@@ -120,7 +149,7 @@ malformed JSON and oversized lines report their physical line. Unknown fields
 are ignored. `observedAt` is capture time; OpenShift `lastTransitionTime` is a
 reported field and is not substituted for capture time.
 
-Verification commands, `verify-run`, `verify-lifecycle-policy`, and `compare-runs` accept `--output text|json` (or
+Verification commands, `verify-run`, `verify-lifecycle-policy`, `timeline-run`, and `compare-runs` accept `--output text|json` (or
 the equals form); text is the default. See [JSON output](json-output.md).
 `observe-upgrade` is text-only. `check-version` and replay commands return `0`
 for successful processing and `1` for errors, without a contract verdict.

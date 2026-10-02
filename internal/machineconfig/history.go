@@ -9,6 +9,7 @@ import (
 	"time"
 
 	machineconfigv1 "github.com/openshift/api/machineconfiguration/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 type Observation struct {
@@ -90,6 +91,14 @@ func AnalyzeHistory(observations []Observation) (HistoryReport, error) {
 				i+1,
 			)
 		}
+		if observation.Pool.APIVersion != "machineconfiguration.openshift.io/v1" || observation.Pool.Kind != "MachineConfigPool" {
+			return HistoryReport{}, fmt.Errorf(
+				"observation %d: unsupported resource: %s/%s",
+				i+1,
+				observation.Pool.APIVersion,
+				observation.Pool.Kind,
+			)
+		}
 
 		if observation.Pool.Name == "" {
 			return HistoryReport{}, fmt.Errorf(
@@ -117,6 +126,34 @@ func AnalyzeHistory(observations []Observation) (HistoryReport, error) {
 					"observation %d: observedAt must be later than the previous observation",
 					i+1,
 				)
+			}
+		}
+
+		status := observation.Pool.Status
+		if status.MachineCount < 0 || status.UpdatedMachineCount < 0 || status.ReadyMachineCount < 0 || status.UnavailableMachineCount < 0 || status.DegradedMachineCount < 0 {
+			return HistoryReport{}, fmt.Errorf("observation %d: MachineConfigPool counts must not be negative", i+1)
+		}
+		seen := make(map[machineconfigv1.MachineConfigPoolConditionType]bool)
+		for _, condition := range observation.Pool.Status.Conditions {
+			switch condition.Type {
+			case machineconfigv1.MachineConfigPoolUpdated,
+				machineconfigv1.MachineConfigPoolUpdating,
+				machineconfigv1.MachineConfigPoolDegraded:
+			default:
+				continue
+			}
+			if seen[condition.Type] {
+				return HistoryReport{}, fmt.Errorf(
+					"observation %d: duplicate %s condition",
+					i+1,
+					condition.Type,
+				)
+			}
+			seen[condition.Type] = true
+			switch condition.Status {
+			case corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionUnknown:
+			default:
+				return HistoryReport{}, fmt.Errorf("observation %d: invalid %s status %q", i+1, condition.Type, condition.Status)
 			}
 		}
 	}

@@ -99,6 +99,7 @@ func VerifyOperatorConditionPolicy(versions []upgrade.ClusterVersionObservation,
 	var episode *ConditionPolicyEpisode
 	var previousGood time.Time
 	var previousEligible time.Time
+	var previousCorrelation *TimelineCorrelation
 	inconclusive := false
 	failed := false
 
@@ -140,20 +141,39 @@ func VerifyOperatorConditionPolicy(versions []upgrade.ClusterVersionObservation,
 			finish(time.Time{})
 			previousGood = time.Time{}
 			previousEligible = time.Time{}
+			previousCorrelation = nil
 			if correlation.Kind == CorrelationAmbiguous || (correlation.Phase == upgrade.UpgradePhaseUnknown && correlation.Kind != CorrelationOutside) {
 				report.UncertainSamples++
 				inconclusive = true
 			}
 			continue
 		}
-
+		if correlation.Kind == CorrelationBracketed && correlation.ToTime.Sub(correlation.FromTime) > policy.MaxObservationGap {
+			finish(time.Time{})
+			previousGood = time.Time{}
+			previousEligible = time.Time{}
+			previousCorrelation = nil
+			report.UncertainSamples++
+			inconclusive = true
+			continue
+		}
 		if !previousEligible.IsZero() && observation.ObservedAt.Sub(previousEligible) > policy.MaxObservationGap {
 			finish(time.Time{})
 			previousGood = time.Time{}
 			report.Discontinuities++
 			inconclusive = true
+			previousCorrelation = nil
+		}
+		if previousCorrelation != nil && !policyTimelineContinuous(states, previousCorrelation, &correlation, policy.MaxObservationGap, policy.TargetVersion, policy.TargetImage) {
+			finish(time.Time{})
+			previousGood = time.Time{}
+			report.Discontinuities++
+			inconclusive = true
+			previousCorrelation = nil
 		}
 		previousEligible = observation.ObservedAt
+		currentCorrelation := correlation
+		previousCorrelation = &currentCorrelation
 		report.EvaluatedSamples++
 
 		condition, found := findOperatorCondition(observation.Operator.Status.Conditions, policy.Condition)
@@ -190,6 +210,49 @@ func VerifyOperatorConditionPolicy(versions []upgrade.ClusterVersionObservation,
 	return report, nil
 }
 
+func policyTimelineContinuous(states []upgrade.UpgradeState, previous, current *TimelineCorrelation, maxGap time.Duration, targetVersion, targetImage string) bool {
+	start, end, ok := correlationBounds(states, *current)
+	if !ok {
+		return false
+	}
+	if previous != nil {
+		previousStart, _, previousOK := correlationBounds(states, *previous)
+		if !previousOK || previousStart > start {
+			return false
+		}
+		start = previousStart
+	}
+	for i := start; i <= end; i++ {
+		state := states[i]
+		if state.Phase != upgrade.UpgradePhaseUpdating || state.DesiredVersion != targetVersion || (targetImage != "" && state.DesiredImage != targetImage) {
+			return false
+		}
+		if i > start && state.DesiredImage != states[start].DesiredImage {
+			return false
+		}
+		if i > start && state.ObservedAt.Sub(states[i-1].ObservedAt) > maxGap {
+			return false
+		}
+	}
+	return true
+}
+
+func correlationBounds(states []upgrade.UpgradeState, correlation TimelineCorrelation) (int, int, bool) {
+	from, to := -1, -1
+	for i, state := range states {
+		if state.ObservedAt.Equal(correlation.FromTime) {
+			from = i
+		}
+		if state.ObservedAt.Equal(correlation.ToTime) {
+			to = i
+		}
+	}
+	if from < 0 || to < from {
+		return 0, 0, false
+	}
+	return from, to, correlation.Kind == CorrelationExact || correlation.Kind == CorrelationBracketed
+}
+
 type PostCompletionPolicyReport struct {
 	Contract         string
 	Resource         string
@@ -206,6 +269,7 @@ type PostCompletionPolicyReport struct {
 	ViolatingSamples int
 	UncertainSamples int
 	Evidence         []PostCompletionPolicyFinding
+	windows          []lifecycleCompletionWindow
 }
 
 type PostCompletionPolicyFinding struct {
@@ -330,6 +394,7 @@ func newPostCompletionPolicyReport(versions []upgrade.ClusterVersionObservation,
 	sort.Slice(completions, func(i, j int) bool { return completions[i].ObservedAt.Before(completions[j].ObservedAt) })
 	chosen := completions[0]
 	report.PolicyApplicable = true
+	report.windows = completedLifecycleWindows(states)
 	report.CompletionAt = chosen.ObservedAt
 	report.Deadline = chosen.ObservedAt.Add(grace)
 	if report.TargetImage == "" {
@@ -350,6 +415,21 @@ func evaluatePostCompletionFinding(report *PostCompletionPolicyReport, finding *
 			finding.Uncertain = true
 			report.UncertainSamples++
 		}
+		return
+	}
+	window, ok := lifecycleWindowAt(report.windows, observedAt, report.TargetVersion, report.TargetImage)
+	if !ok {
+		finding.Uncertain = true
+		report.UncertainSamples++
+		return
+	}
+	deadline := window.From.Add(report.GracePeriod)
+	if finding.Attributes == nil {
+		finding.Attributes = make(map[string]string)
+	}
+	finding.Attributes["completionObservedAt"] = window.From.UTC().Format(time.RFC3339Nano)
+	finding.Attributes["deadline"] = deadline.UTC().Format(time.RFC3339Nano)
+	if observedAt.Before(deadline) {
 		return
 	}
 	finding.Applicable = true

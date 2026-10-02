@@ -95,12 +95,40 @@ func AnalyzeHistory(observations []Observation) (HistoryReport, error) {
 				i+1,
 			)
 		}
+		if observation.Node.APIVersion != "v1" || observation.Node.Kind != "Node" {
+			return HistoryReport{}, fmt.Errorf(
+				"observation %d: unsupported resource: %s/%s",
+				i+1,
+				observation.Node.APIVersion,
+				observation.Node.Kind,
+			)
+		}
 
 		if observation.Node.Name == "" {
 			return HistoryReport{}, fmt.Errorf(
 				"observation %d: Node name is missing",
 				i+1,
 			)
+		}
+
+		seenReady := false
+		for _, condition := range observation.Node.Status.Conditions {
+			if condition.Type != corev1.NodeReady {
+				continue
+			}
+			if seenReady {
+				return HistoryReport{}, fmt.Errorf(
+					"observation %d: duplicate %s condition",
+					i+1,
+					corev1.NodeReady,
+				)
+			}
+			seenReady = true
+			switch condition.Status {
+			case corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionUnknown:
+			default:
+				return HistoryReport{}, fmt.Errorf("observation %d: invalid Ready status %q", i+1, condition.Status)
+			}
 		}
 
 		if i == 0 {

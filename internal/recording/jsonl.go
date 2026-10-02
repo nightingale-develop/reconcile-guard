@@ -29,14 +29,18 @@ func NewJSONLRecorder(
 		)
 	}
 
-	directories := []string{
-		filepath.Join(directory, "operators"),
-		filepath.Join(directory, "machine-config-pools"),
-		filepath.Join(directory, "nodes"),
+	if err := os.MkdirAll(directory, 0755); err != nil {
+		return nil, fmt.Errorf("create output directory: %w", err)
 	}
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	directories := []string{"operators", "machine-config-pools", "nodes"}
 
 	for _, path := range directories {
-		if err := os.MkdirAll(path, 0755); err != nil {
+		if err := root.MkdirAll(path, 0755); err != nil {
 			return nil, fmt.Errorf(
 				"create output directory %q: %w",
 				path,
@@ -56,13 +60,10 @@ func (r *JSONLRecorder) AppendClusterVersion(
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	path := filepath.Join(
-		r.directory,
-		"cluster-version.jsonl",
-	)
+	path := "cluster-version.jsonl"
 
 	if err := appendJSONLine(
-		path,
+		r.directory, path,
 		observation,
 	); err != nil {
 		return fmt.Errorf(
@@ -93,13 +94,12 @@ func (r *JSONLRecorder) AppendOperator(
 	defer r.mu.Unlock()
 
 	path := filepath.Join(
-		r.directory,
 		"operators",
 		name+".jsonl",
 	)
 
 	if err := appendJSONLine(
-		path,
+		r.directory, path,
 		observation,
 	); err != nil {
 		return fmt.Errorf(
@@ -131,13 +131,12 @@ func (r *JSONLRecorder) AppendMachineConfigPool(
 	defer r.mu.Unlock()
 
 	path := filepath.Join(
-		r.directory,
 		"machine-config-pools",
 		name+".jsonl",
 	)
 
 	if err := appendJSONLine(
-		path,
+		r.directory, path,
 		observation,
 	); err != nil {
 		return fmt.Errorf(
@@ -169,13 +168,12 @@ func (r *JSONLRecorder) AppendNode(
 	defer r.mu.Unlock()
 
 	path := filepath.Join(
-		r.directory,
 		"nodes",
 		name+".jsonl",
 	)
 
 	if err := appendJSONLine(
-		path,
+		r.directory, path,
 		observation,
 	); err != nil {
 		return fmt.Errorf(
@@ -231,10 +229,15 @@ func AppendCapture(
 }
 
 func appendJSONLine(
-	path string,
+	directory, path string,
 	value any,
 ) error {
-	file, err := os.OpenFile(
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	file, err := root.OpenFile(
 		path,
 		os.O_CREATE|
 			os.O_WRONLY|
