@@ -43,9 +43,22 @@ not evaluate every ClusterOperator unless every history is supplied.
 
 `verify-run` applies the aggregate operator checks to one stopped recording and,
 when present, adds the evidence-only MCP and Node checks described below.
-`compare-runs` compares only those condition/version verdicts: regression is
-PASS→FAIL; FAIL→PASS is improvement; equal definite verdicts are unchanged.
-Missing or inconclusive contracts remain INCONCLUSIVE.
+`compare-runs` uses condition/version verdicts as its base regression signal:
+PASS→FAIL is regression, FAIL→PASS is improvement, and equal definite verdicts
+are unchanged. Missing or inconclusive contracts remain INCONCLUSIVE. Recorded
+MCP/Node evidence is compared separately but stays evidence-only and cannot
+create a regression verdict without an explicit lifecycle policy. Observed
+upgrade/convergence timing is reported as descriptive sample-to-sample duration
+and does not affect the verdict.
+
+With `--policy`, the same supplied `UpgradePolicy` is evaluated against both
+runs and its resulting operator/MCP/Node contract verdicts are compared with the
+same matrix. Operator policy comparisons also expose the largest recorded
+`observedSpan` carried by policy episode evidence and its candidate-minus-baseline
+delta when both sides have one; the delta is descriptive and does not itself
+change a verdict. A policy PASS→FAIL is a regression because its threshold comes
+from explicit user input. ReconcileGuard does not retarget or relax the policy
+for either run.
 
 
 ### MachineConfigPool lifecycle evidence

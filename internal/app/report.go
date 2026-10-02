@@ -136,7 +136,7 @@ func (c cli) printUsage() {
 		"  report-run <run-directory> [--policy <policy.yaml>] [--file <report.md>]  Render a Markdown run report",
 	)
 	fmt.Fprintln(c.stdout,
-		"  compare-runs <baseline-run-directory> <candidate-run-directory>  Compare contract verdicts for regressions",
+		"  compare-runs <baseline-run-directory> <candidate-run-directory> [--policy <policy.yaml>]  Compare run evidence and explicit-policy regressions",
 	)
 }
 

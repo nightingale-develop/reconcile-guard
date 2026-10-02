@@ -32,8 +32,21 @@ not that an OpenShift product guarantee was violated.
 JSON summarizes the selected checks; it does not embed input snapshots.
 
 `compare-runs` uses a `comparison` envelope with baseline/candidate summaries,
-scope, contract changes and its aggregate verdict. It compares only condition and
-version contracts. PASS means no detected regression, not candidate health.
+scope, operator contract changes, optional MCP/Node evidence comparisons, and
+recorded timing comparisons. Timing entries contain observation bounds, sampled
+durations, and a signed candidate-minus-baseline delta when both sides exist
+and the final desired version and image match. They are descriptive and do not
+affect the verdict. Final desired version and image are both preserved, and
+`scope.sameFinalTarget` reports whether they match.
+
+When `--policy` is supplied, `comparison.policy` contains the policy source and
+target, baseline/candidate policy verdicts, and per-resource policy-contract
+changes. Operator duration contracts can additionally include
+`baselineObservedSpan`, `candidateObservedSpan`, and `observedSpanDelta` from the
+recorded policy episode evidence. Explicit-policy regressions participate in the
+aggregate comparison verdict; span deltas alone do not. MCP/Node evidence-only
+comparisons do not. PASS means no detected
+regression among comparable verdict-bearing contracts, not candidate health.
 Exit codes are `0` PASS, `2` FAIL, `3` INCONCLUSIVE and `1` for errors.
 
 ## Timeline JSON

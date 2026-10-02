@@ -40,6 +40,10 @@ go build -o reconcile-guard ./cmd/reconcile-guard
 # Render a Markdown report, optionally including policy results:
 ./reconcile-guard report-run ./runs/REPLACE_WITH_RUN_ID \
   --policy examples/lifecycle-policy.yaml --file report.md
+# Compare two stopped runs; policy comparison is optional:
+./reconcile-guard compare-runs \
+  ./baseline/REPLACE_WITH_RUN_ID \
+  ./runs/REPLACE_WITH_RUN_ID
 ```
 
 `observe-upgrade` records immediately, stops after the phase analyzer observes
@@ -70,8 +74,10 @@ health.
 Verification is offline and does not diagnose root causes. Sampling gaps,
 ambiguous phases, target changes, and clock differences can produce
 INCONCLUSIVE results. A run manifest checks local consistency; it does not prove
-cluster provenance or full-cluster coverage. `compare-runs` reports detected
-contract regressions, not candidate health.
+cluster provenance or full-cluster coverage. `compare-runs` compares operator
+contracts, reports MCP/Node evidence and recorded timing deltas, and can compare
+explicit lifecycle-policy verdicts when `--policy` is supplied. Descriptive
+timing and evidence differences do not become regressions by themselves.
 The base `verify-run` MCP/Node checks remain evidence-only and do not change the
 aggregate operator verdict. Policy FAILs require thresholds in the supplied
 policy. Timeline and Markdown rendering do not add verdict semantics.

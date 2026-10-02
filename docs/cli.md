@@ -21,7 +21,7 @@
 | `verify-run <run-dir>` | Verify one stopped recording. |
 | `timeline-run <run-dir>` | Merge ClusterVersion phase changes and recorded operator/MCP/Node transitions into one ordered timeline. |
 | `report-run <run-dir> [--policy <policy.yaml>] [--file <report.md>]` | Render a Markdown report from one stopped run. |
-| `compare-runs <baseline-dir> <candidate-dir>` | Compare condition/version verdicts between stopped runs. |
+| `compare-runs <baseline-dir> <candidate-dir> [--policy <policy.yaml>]` | Compare operator contracts, auxiliary lifecycle evidence, observed timing, and optional explicit-policy verdicts between stopped runs. |
 
 Use the current kubeconfig/context unless `--kubeconfig` is supplied. Live
 commands are read-only. Recording needs LIST/WATCH on ClusterVersion,
@@ -135,10 +135,30 @@ the ClusterVersion timeline. Those base MCP/Node evidence contracts do not chang
 the aggregate operator verdict and do not create FAIL. Explicit policy FAILs are
 reported only by `verify-lifecycle-policy`. `verify-run` does not include
 Progressing duration.
-`compare-runs` allows different clusters and targets after local validation and
-compares only condition/version contracts. PASS means no detected regression;
-FAIL→FAIL is unchanged; either INCONCLUSIVE/missing side is inconclusive. Different
-operator sets are INCONCLUSIVE unless a proven regression takes precedence.
+`compare-runs` allows different clusters and targets after local validation.
+Condition/version contracts remain the base regression signal: PASS→FAIL is a
+regression, FAIL→PASS is an improvement, equal definite verdicts are unchanged,
+and an INCONCLUSIVE or missing side remains inconclusive. Different operator
+sets are INCONCLUSIVE unless a proven regression takes precedence.
+
+When MCP/Node histories are available, their evidence-only lifecycle contracts
+and inventory scope are also shown. These auxiliary comparisons do not change
+the aggregate comparison verdict. Recorded timing includes the observed span
+from the first contiguous UPDATING sample to the recorded COMPLETED sample for
+the final target, plus sampled post-completion MCP stable and Node Ready/config
+alignment delays when that evidence exists. A signed timing delta is emitted only
+when both runs end on the same desired version and image. Timing values are
+descriptive sample measurements; they are not exact transition durations and do
+not create regression verdicts.
+
+`--policy <policy.yaml>` applies the same explicit `UpgradePolicy` to both runs
+and compares its resulting operator/MCP/Node contracts. For operator duration
+contracts, the maximum recorded adverse `observedSpan` is shown on each side and
+a signed delta is reported when both sides contain such evidence. That duration
+delta is descriptive; the verdict still comes from the explicit policy result.
+Policy PASS→FAIL can create a comparison FAIL because the threshold basis is
+explicit. A policy that does not apply confidently to one side remains
+INCONCLUSIVE. The policy target is not rewritten to match either run.
 
 ## Input and output
 

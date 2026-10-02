@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/nightingale-develop/reconcile-guard/internal/contracts"
 	"github.com/nightingale-develop/reconcile-guard/internal/result"
@@ -261,5 +262,273 @@ func TestAggregateRegressionDominatesUnknownInEitherOrder(t *testing.T) {
 		if err != nil || got.Verdict != result.VerdictFail {
 			t.Fatalf("regressing=%d report=%+v err=%v", regressing, got, err)
 		}
+	}
+}
+
+func TestCompareEvidenceIncludesAuxiliaryWithoutChangingAggregate(t *testing.T) {
+	baseline := Evidence{
+		Verification: passingReport("ingress"),
+		MachineConfigPools: []contracts.MachineConfigPoolEvidenceReport{{
+			Contract: contracts.MachineConfigPoolLifecycleContract,
+			Pool:     "master",
+			Verdict:  result.VerdictPass,
+		}},
+		Nodes: []contracts.NodeEvidenceReport{{
+			Contract: contracts.NodeLifecycleContract,
+			Node:     "node-0",
+			Verdict:  result.VerdictPass,
+		}, {
+			Contract: contracts.NodeLifecycleContract,
+			Node:     "node-1",
+			Verdict:  result.VerdictPass,
+		}},
+	}
+	candidate := Evidence{
+		Verification: passingReport("ingress"),
+		MachineConfigPools: []contracts.MachineConfigPoolEvidenceReport{{
+			Contract: contracts.MachineConfigPoolLifecycleContract,
+			Pool:     "master",
+			Verdict:  result.VerdictInconclusive,
+		}},
+		Nodes: []contracts.NodeEvidenceReport{{
+			Contract: contracts.NodeLifecycleContract,
+			Node:     "node-1",
+			Verdict:  result.VerdictInconclusive,
+		}},
+	}
+
+	report, err := CompareEvidence(baseline, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Verdict != result.VerdictPass {
+		t.Fatalf("evidence-only auxiliary comparison changed aggregate verdict: %s", report.Verdict)
+	}
+	if len(report.MachineConfigPools) != 1 || report.MachineConfigPools[0].Verdict != result.VerdictInconclusive {
+		t.Fatalf("pool comparison=%+v", report.MachineConfigPools)
+	}
+	if len(report.Nodes) != 1 || report.Nodes[0].Verdict != result.VerdictInconclusive || report.Nodes[0].Contracts[0].Change != ChangeInconclusive {
+		t.Fatalf("node comparison=%+v", report.Nodes)
+	}
+	if report.Scope.CommonMachineConfigPools != 1 || len(report.Scope.BaselineOnlyNodes) != 1 || report.Scope.BaselineOnlyNodes[0] != "node-0" {
+		t.Fatalf("scope=%+v", report.Scope)
+	}
+}
+
+func TestCompareEvidencePolicyRegressionAffectsAggregate(t *testing.T) {
+	policyPass := result.Report{
+		Verdict: result.VerdictPass,
+		Nodes: []result.ResourceResult{{
+			Name:    "node-0",
+			Verdict: result.VerdictPass,
+			Contracts: []result.Contract{{
+				Name:    "node-ready-post-completion-policy",
+				Verdict: result.VerdictPass,
+			}},
+		}},
+	}
+	policyFail := result.Report{
+		Verdict: result.VerdictFail,
+		Nodes: []result.ResourceResult{{
+			Name:    "node-0",
+			Verdict: result.VerdictFail,
+			Contracts: []result.Contract{{
+				Name:    "node-ready-post-completion-policy",
+				Verdict: result.VerdictFail,
+			}},
+		}},
+	}
+
+	report, err := CompareEvidence(
+		Evidence{Verification: passingReport("ingress"), Policy: &policyPass},
+		Evidence{Verification: passingReport("ingress"), Policy: &policyFail},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Verdict != result.VerdictFail || report.Policy == nil || report.Policy.Verdict != result.VerdictFail {
+		t.Fatalf("report=%+v", report)
+	}
+	if got := report.Policy.Nodes[0].Contracts[0].Change; got != ChangeRegression {
+		t.Fatalf("policy change=%s", got)
+	}
+}
+
+func TestCompareEvidenceTimingsAreDescriptive(t *testing.T) {
+	start := time.Date(2026, 10, 1, 10, 0, 0, 0, time.UTC)
+	baseline := Evidence{
+		Verification: passingReport("ingress"),
+		Timings: []ObservedTiming{{
+			Name:         "upgrade-observed-span",
+			ResourceKind: "ClusterVersion",
+			ResourceName: "version",
+			From:         start,
+			To:           start.Add(4 * time.Minute),
+		}},
+	}
+	candidate := Evidence{
+		Verification: passingReport("ingress"),
+		Timings: []ObservedTiming{
+			{
+				Name:         "upgrade-observed-span",
+				ResourceKind: "ClusterVersion",
+				ResourceName: "version",
+				From:         start,
+				To:           start.Add(5 * time.Minute),
+			},
+			{
+				Name:         "post-completion-ready-observed-delay",
+				ResourceKind: "Node",
+				ResourceName: "node-0",
+				From:         start.Add(5 * time.Minute),
+				To:           start.Add(6 * time.Minute),
+			},
+		},
+	}
+
+	report, err := CompareEvidence(baseline, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Verdict != result.VerdictPass || len(report.Timings) != 2 {
+		t.Fatalf("report=%+v", report)
+	}
+	if report.Timings[0].Delta != "+1m0s" || report.Timings[0].Baseline == nil || report.Timings[0].Candidate == nil {
+		t.Fatalf("upgrade timing=%+v", report.Timings[0])
+	}
+	if report.Timings[1].Baseline != nil || report.Timings[1].Candidate == nil || report.Timings[1].Delta != "" {
+		t.Fatalf("one-sided timing=%+v", report.Timings[1])
+	}
+}
+
+func TestCompareEvidencePolicyObservedSpanDelta(t *testing.T) {
+	makePolicy := func(verdict result.Verdict, span string) result.Report {
+		return result.Report{
+			Verdict: verdict,
+			Operators: []result.OperatorResult{{
+				Name:    "ingress",
+				Verdict: verdict,
+				Contracts: []result.Contract{{
+					Name:    "operator-progressing-policy",
+					Verdict: verdict,
+					Evidence: []result.Evidence{{
+						Kind:       "operator-lifecycle-policy-episode",
+						Attributes: map[string]string{"observedSpan": span},
+					}},
+				}},
+			}},
+		}
+	}
+	baselinePolicy := makePolicy(result.VerdictPass, "4m12s")
+	candidatePolicy := makePolicy(result.VerdictPass, "7m48s")
+	report, err := CompareEvidence(
+		Evidence{Verification: passingReport("ingress"), Policy: &baselinePolicy},
+		Evidence{Verification: passingReport("ingress"), Policy: &candidatePolicy},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := report.Policy.Operators[0].Contracts[0]
+	if contract.BaselineObservedSpan != "4m12s" || contract.CandidateObservedSpan != "7m48s" || contract.ObservedSpanDelta != "+3m36s" {
+		t.Fatalf("contract=%+v", contract)
+	}
+	if report.Verdict != result.VerdictPass || contract.Change != ChangeUnchanged {
+		t.Fatalf("descriptive duration changed verdict: report=%s change=%s", report.Verdict, contract.Change)
+	}
+}
+
+func TestCompareEvidenceRejectsOneSidedPolicy(t *testing.T) {
+	policyReport := result.Report{Verdict: result.VerdictPass}
+	if _, err := CompareEvidence(
+		Evidence{Verification: passingReport("ingress"), Policy: &policyReport},
+		Evidence{Verification: passingReport("ingress")},
+	); err == nil {
+		t.Fatal("accepted one-sided policy evidence")
+	}
+}
+
+func TestPolicyComparisonPreservesUncertaintyAndRegressionPrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name                                              string
+		baselineUncertain, candidateUncertain, regression bool
+		want                                              result.Verdict
+	}{
+		{"baseline missing scope", true, false, false, result.VerdictInconclusive},
+		{"candidate missing scope", false, true, false, result.VerdictInconclusive},
+		{"both missing scope", true, true, false, result.VerdictInconclusive},
+		{"known regression dominates missing scope", true, false, true, result.VerdictFail},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			makePolicy := func(uncertain, failed bool) result.Report {
+				verdict := result.VerdictPass
+				if failed {
+					verdict = result.VerdictFail
+				}
+				p := result.Report{Verdict: verdict, Nodes: []result.ResourceResult{{Name: "worker-0", Verdict: verdict, Contracts: []result.Contract{{Name: "node-ready-post-completion-policy", Verdict: verdict}}}}}
+				if uncertain {
+					p.Verdict = result.VerdictInconclusive
+					p.Details = &result.Details{Counts: map[string]int{"missingDefaultScopes": 1}}
+				}
+				return p
+			}
+			before, after := makePolicy(tc.baselineUncertain, false), makePolicy(tc.candidateUncertain, tc.regression)
+			r, err := CompareEvidence(Evidence{Verification: passingReport("ingress"), Policy: &before}, Evidence{Verification: passingReport("ingress"), Policy: &after})
+			if err != nil || r.Policy == nil || r.Policy.Verdict != tc.want || r.Verdict != tc.want {
+				t.Fatalf("report=%+v err=%v", r, err)
+			}
+		})
+	}
+}
+
+func TestExtendedComparisonDeterministicAcrossInputOrder(t *testing.T) {
+	start := time.Date(2026, 10, 2, 10, 0, 0, 0, time.UTC)
+	makeEvidence := func(names []string) Evidence {
+		e := Evidence{Verification: passingReport(names...), Policy: &result.Report{Verdict: result.VerdictPass}}
+		for _, name := range names {
+			e.MachineConfigPools = append(e.MachineConfigPools, contracts.MachineConfigPoolEvidenceReport{Pool: name, Contract: contracts.MachineConfigPoolLifecycleContract, Verdict: result.VerdictPass})
+			e.Nodes = append(e.Nodes, contracts.NodeEvidenceReport{Node: name, Contract: contracts.NodeLifecycleContract, Verdict: result.VerdictPass})
+			e.Timings = append(e.Timings, ObservedTiming{Name: "post-completion-ready-observed-delay", ResourceKind: "Node", ResourceName: name, From: start, To: start.Add(time.Minute)})
+			e.Policy.Nodes = append(e.Policy.Nodes, result.ResourceResult{Name: name, Verdict: result.VerdictPass, Contracts: []result.Contract{
+				{Name: "node-ready-post-completion-policy", Verdict: result.VerdictPass},
+				{Name: "node-config-alignment-post-completion-policy", Verdict: result.VerdictPass},
+			}})
+		}
+		return e
+	}
+	before, after := makeEvidence([]string{"z", "a"}), makeEvidence([]string{"a", "z"})
+	original, err := json.Marshal([]Evidence{before, after})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := CompareEvidence(before, after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unchanged, err := json.Marshal([]Evidence{before, after})
+	if err != nil || !reflect.DeepEqual(original, unchanged) {
+		t.Fatal("comparison mutated input")
+	}
+	before.Nodes[0], before.Nodes[1] = before.Nodes[1], before.Nodes[0]
+	before.MachineConfigPools[0], before.MachineConfigPools[1] = before.MachineConfigPools[1], before.MachineConfigPools[0]
+	before.Timings[0], before.Timings[1] = before.Timings[1], before.Timings[0]
+	before.Policy.Nodes[0], before.Policy.Nodes[1] = before.Policy.Nodes[1], before.Policy.Nodes[0]
+	for i := range before.Policy.Nodes {
+		c := before.Policy.Nodes[i].Contracts
+		c[0], c[1] = c[1], c[0]
+	}
+	second, err := CompareEvidence(before, after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstJSON, err := json.Marshal(NewDocument(first))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondJSON, err := json.Marshal(NewDocument(second))
+	if err != nil || !reflect.DeepEqual(firstJSON, secondJSON) {
+		t.Fatal("extended JSON depends on input order")
+	}
+	if first.Nodes[0].Name != "a" || first.MachineConfigPools[0].Name != "a" || first.Timings[0].ResourceName != "a" || first.Policy.Nodes[0].Name != "a" {
+		t.Fatalf("noncanonical order: %+v", first)
 	}
 }

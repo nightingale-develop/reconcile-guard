@@ -12,6 +12,7 @@ import (
 
 	"github.com/nightingale-develop/reconcile-guard/internal/recording"
 	"github.com/nightingale-develop/reconcile-guard/internal/regression"
+	"github.com/nightingale-develop/reconcile-guard/internal/upgrade"
 )
 
 func setComparisonFixtureVerdict(t *testing.T, dir, verdict string) {
@@ -192,13 +193,21 @@ func TestCompareRunsDifferentClustersAndVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, c := doc.Comparison.Baseline, doc.Comparison.Candidate
-	if b.ClusterID != "cluster-a" || c.ClusterID != "cluster-b" || b.FinalDesiredVersion != "4.20.0" || c.FinalDesiredVersion != "4.21.0" || b.RunID == "" || c.RunID == "" {
+	if b.ClusterID != "cluster-a" || c.ClusterID != "cluster-b" || b.FinalDesiredVersion != "4.20.0" || c.FinalDesiredVersion != "4.21.0" || b.FinalDesiredImage == "" || c.FinalDesiredImage == "" || b.RunID == "" || c.RunID == "" {
 		t.Fatalf("summaries=%+v %+v", b, c)
+	}
+	if doc.Comparison.Scope.SameFinalTarget {
+		t.Fatal("different final versions reported as the same target")
+	}
+	for _, timing := range doc.Comparison.Timings {
+		if timing.Delta != "" {
+			t.Fatalf("timing delta reported across different final targets: %+v", timing)
+		}
 	}
 }
 
 func TestCompareRunsUsage(t *testing.T) {
-	for _, args := range [][]string{{"compare-runs"}, {"compare-runs", "one"}, {"compare-runs", "one", "two", "three"}, {"compare-runs", "one", "two", "--output=yaml"}, {"compare-runs", "one", "two", "--output=json", "--output=text"}} {
+	for _, args := range [][]string{{"compare-runs"}, {"compare-runs", "one"}, {"compare-runs", "one", "two", "three"}, {"compare-runs", "one", "two", "--policy"}, {"compare-runs", "one", "two", "--policy="}, {"compare-runs", "one", "two", "--policy=a", "--policy=b"}, {"compare-runs", "one", "two", "--output=yaml"}, {"compare-runs", "one", "two", "--output=json", "--output=text"}} {
 		var out, stderr bytes.Buffer
 		if code := Run(args, &out, &stderr); code != 1 || out.Len() != 0 || stderr.Len() == 0 {
 			t.Fatalf("args=%v code=%d out=%s err=%s", args, code, &out, &stderr)
@@ -225,6 +234,173 @@ func TestCompareRunsOutputError(t *testing.T) {
 		code := Run([]string{"compare-runs", baseline, candidate, "--output=" + format}, comparisonErrorWriter{}, &stderr)
 		if code != 1 || !strings.Contains(stderr.String(), "comparison output unavailable") {
 			t.Fatalf("%s: code=%d stderr=%s", format, code, &stderr)
+		}
+	}
+}
+
+func TestCompareRunsIncludesAuxiliaryAndObservedTimings(t *testing.T) {
+	baseline, candidate := lifecyclePolicyAuxiliaryRunFixture(t), lifecyclePolicyAuxiliaryRunFixture(t)
+	var out, stderr bytes.Buffer
+	if code := Run([]string{"compare-runs", baseline, candidate, "--output=json"}, &out, &stderr); code != 0 || stderr.Len() != 0 {
+		t.Fatalf("exit=%d stdout=%s stderr=%s", code, &out, &stderr)
+	}
+	var doc regression.Document
+	if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	report := doc.Comparison
+	if !report.Scope.SameFinalTarget || report.Scope.CommonMachineConfigPools != 1 || report.Scope.CommonNodes != 1 {
+		t.Fatalf("scope=%+v", report.Scope)
+	}
+	if len(report.MachineConfigPools) != 1 || len(report.Nodes) != 1 || report.MachineConfigPools[0].Contracts[0].Change != regression.ChangeUnchanged || report.Nodes[0].Contracts[0].Change != regression.ChangeUnchanged {
+		t.Fatalf("auxiliary comparison=%+v %+v", report.MachineConfigPools, report.Nodes)
+	}
+	if len(report.Timings) != 4 {
+		t.Fatalf("timings=%+v", report.Timings)
+	}
+	for _, timing := range report.Timings {
+		if timing.Baseline == nil || timing.Candidate == nil || timing.Delta != "0s" {
+			t.Fatalf("timing=%+v", timing)
+		}
+	}
+	if report.Timings[0].Name != upgradeObservedSpanTiming || report.Timings[0].Baseline.Duration != "4m0s" {
+		t.Fatalf("upgrade timing=%+v", report.Timings[0])
+	}
+}
+
+func TestCompareRunsPolicyRegression(t *testing.T) {
+	baseline, candidate := lifecyclePolicyAuxiliaryRunFixture(t), lifecyclePolicyAuxiliaryRunFixture(t)
+	nodePath := filepath.Join(candidate, "nodes", "node-0.jsonl")
+	data, err := os.ReadFile(nodePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = bytes.Replace(data, []byte(`"type":"Ready","status":"True"`), []byte(`"type":"Ready","status":"False"`), 1)
+	writeRunTestFile(t, nodePath, data)
+
+	policyPath := writeLifecyclePolicy(t, `
+apiVersion: reconcileguard.io/v1alpha1
+kind: UpgradePolicy
+targetVersion: 4.20.0
+source: compare-policy-test
+defaults:
+  node:
+    readyPostCompletionGracePeriod: 1m
+`)
+
+	for _, option := range [][]string{{"--policy", policyPath}, {"--policy=" + policyPath}} {
+		var out, stderr bytes.Buffer
+		args := append([]string{"compare-runs", baseline, candidate, "--output=json"}, option...)
+		if code := Run(args, &out, &stderr); code != 2 || stderr.Len() != 0 {
+			t.Fatalf("%v: exit=%d stdout=%s stderr=%s", option, code, &out, &stderr)
+		}
+		var doc regression.Document
+		if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
+			t.Fatal(err)
+		}
+		comparison := doc.Comparison
+		if comparison.Policy == nil || comparison.Policy.Source != "compare-policy-test" || comparison.Policy.BaselineVerdict != "PASS" || comparison.Policy.CandidateVerdict != "FAIL" || comparison.Policy.Verdict != "FAIL" || comparison.Verdict != "FAIL" {
+			t.Fatalf("comparison=%+v", comparison)
+		}
+		if len(comparison.Policy.Nodes) != 1 || comparison.Policy.Nodes[0].Contracts[0].Change != regression.ChangeRegression {
+			t.Fatalf("policy nodes=%+v", comparison.Policy.Nodes)
+		}
+	}
+}
+
+func TestCompareRunsAuxiliaryScopeDoesNotCreateRegression(t *testing.T) {
+	baseline, candidate := lifecyclePolicyAuxiliaryRunFixture(t), lifecyclePolicyAuxiliaryRunFixture(t)
+	if err := os.RemoveAll(filepath.Join(candidate, "nodes")); err != nil {
+		t.Fatal(err)
+	}
+	changeRunManifest(t, candidate, func(m *recording.RunManifest) {
+		m.Nodes = nil
+		m.Files.NodesDirectory = ""
+	})
+
+	var out, stderr bytes.Buffer
+	if code := Run([]string{"compare-runs", baseline, candidate, "--output=json"}, &out, &stderr); code != 0 || stderr.Len() != 0 {
+		t.Fatalf("exit=%d stdout=%s stderr=%s", code, &out, &stderr)
+	}
+	var doc regression.Document
+	if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Comparison.Verdict != "PASS" || len(doc.Comparison.Scope.BaselineOnlyNodes) != 1 || doc.Comparison.Scope.BaselineOnlyNodes[0] != "node-0" {
+		t.Fatalf("comparison=%+v", doc.Comparison)
+	}
+}
+
+func TestCompareRunsPolicyMissingDefaultScopeIsInconclusive(t *testing.T) {
+	baseline, candidate := verifyRunFixture(t), verifyRunFixture(t)
+	policyPath := writeLifecyclePolicy(t, `apiVersion: reconcileguard.io/v1alpha1
+kind: UpgradePolicy
+targetVersion: 4.20.0
+source: comparison-scope-test
+maxObservationGap: 10m
+defaults:
+  degraded:
+    maxObservedDuration: 1m
+  machineConfigPool:
+    postCompletionGracePeriod: 1m
+  node:
+    readyPostCompletionGracePeriod: 1m
+`)
+	for _, format := range []string{"text", "json"} {
+		var out, stderr bytes.Buffer
+		code := Run([]string{"compare-runs", baseline, candidate, "--policy", policyPath, "--output", format}, &out, &stderr)
+		if code != 3 || stderr.Len() != 0 {
+			t.Fatalf("format=%s exit=%d stdout=%s stderr=%s", format, code, &out, &stderr)
+		}
+		if format == "text" {
+			if !strings.Contains(out.String(), "Policy comparison verdict: INCONCLUSIVE") {
+				t.Fatalf("output=%s", &out)
+			}
+			continue
+		}
+		var doc regression.Document
+		if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
+			t.Fatal(err)
+		}
+		if doc.Comparison.Policy == nil || doc.Comparison.Policy.BaselineVerdict != "INCONCLUSIVE" || doc.Comparison.Policy.CandidateVerdict != "INCONCLUSIVE" || doc.Comparison.Policy.Verdict != "INCONCLUSIVE" || doc.Comparison.Verdict != "INCONCLUSIVE" {
+			t.Fatalf("comparison=%+v", doc.Comparison)
+		}
+	}
+}
+
+func TestCompareRunsImageOnlyTargetDifferenceSuppressesTimingDelta(t *testing.T) {
+	baseline, candidate := lifecyclePolicyAuxiliaryRunFixture(t), lifecyclePolicyAuxiliaryRunFixture(t)
+	path := filepath.Join(candidate, "cluster-version.jsonl")
+	observations, err := upgrade.ReadHistory(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data bytes.Buffer
+	for _, observation := range observations {
+		if observation.ClusterVersion.Status.Desired.Version == "4.20.0" {
+			observation.ClusterVersion.Status.Desired.Image = "example.invalid/release@sha256:" + strings.Repeat("c", 64)
+			observation.ClusterVersion.Status.History[0].Image = observation.ClusterVersion.Status.Desired.Image
+		}
+		if err := json.NewEncoder(&data).Encode(observation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeRunTestFile(t, path, data.Bytes())
+	var out, stderr bytes.Buffer
+	if code := Run([]string{"compare-runs", baseline, candidate, "--output=json"}, &out, &stderr); code != 0 || stderr.Len() != 0 {
+		t.Fatalf("exit=%d stdout=%s stderr=%s", code, &out, &stderr)
+	}
+	var doc regression.Document
+	if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	r := doc.Comparison
+	if r.Scope.SameFinalTarget || r.Baseline.FinalDesiredVersion != r.Candidate.FinalDesiredVersion || r.Baseline.FinalDesiredImage == r.Candidate.FinalDesiredImage || len(r.Timings) != 4 {
+		t.Fatalf("comparison=%+v", r)
+	}
+	for _, timing := range r.Timings {
+		if timing.Baseline == nil || timing.Candidate == nil || timing.Delta != "" {
+			t.Fatalf("cross-image timing delta or lost evidence: %+v", timing)
 		}
 	}
 }

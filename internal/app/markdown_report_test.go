@@ -118,3 +118,38 @@ func TestReportRunOutputFailures(t *testing.T) {
 		t.Fatalf("file failure: exit=%d stderr=%s", code, &stderr)
 	}
 }
+
+func TestReportRunPreservesAuxiliaryPolicyVerdict(t *testing.T) {
+	for _, tc := range []struct{ status, verdict string }{{"False", "FAIL"}, {"Unknown", "INCONCLUSIVE"}} {
+		t.Run(tc.verdict, func(t *testing.T) {
+			dir := lifecyclePolicyAuxiliaryRunFixture(t)
+			path := filepath.Join(dir, "nodes", "node-0.jsonl")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			old := []byte(`"type":"Ready","status":"True"`)
+			if !bytes.Contains(data, old) {
+				t.Fatal("fixture lacks Ready=True")
+			}
+			writeRunTestFile(t, path, bytes.Replace(data, old, []byte(`"type":"Ready","status":"`+tc.status+`"`), 1))
+			policy := writeLifecyclePolicy(t, `apiVersion: reconcileguard.io/v1alpha1
+kind: UpgradePolicy
+targetVersion: 4.20.0
+source: report-policy-test
+defaults:
+  node:
+    readyPostCompletionGracePeriod: 1m
+`)
+			var out, stderr bytes.Buffer
+			if code := Run([]string{"report-run", dir, "--policy", policy}, &out, &stderr); code != 0 || stderr.Len() != 0 {
+				t.Fatalf("exit=%d stdout=%s stderr=%s", code, &out, &stderr)
+			}
+			for _, want := range []string{"| Aggregate verdict | PASS |", "| Verdict | " + tc.verdict + " |", "| Node/node-0 | node-ready-post-completion-policy | " + tc.verdict + " |"} {
+				if !strings.Contains(out.String(), want) {
+					t.Fatalf("missing %q in %s", want, &out)
+				}
+			}
+		})
+	}
+}

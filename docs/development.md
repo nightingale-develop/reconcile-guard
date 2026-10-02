@@ -27,7 +27,7 @@ The race detector needs a supported platform and C toolchain.
 | `internal/contracts/` | Correlation and contract evaluation. |
 | `internal/policy/` | Versioned explicit lifecycle policy schema, parsing, validation and inheritance. |
 | `internal/recording/` | Run manifests and JSONL persistence. |
-| `internal/regression/` | Compare computed contract verdicts. |
+| `internal/regression/` | Compare verification/policy verdicts and descriptive lifecycle timing. |
 | `internal/result/` | Shared verification output model. |
 | `internal/timeline/` | Deterministic merged lifecycle timeline model and builder. |
 | `examples/` | Synthetic histories and example policy. |
@@ -45,7 +45,8 @@ substitute. There is no root-cause diagnosis or provenance proof. Sampling gaps,
 watch failures and clock differences remain material. Explicit lifecycle policies
 have no built-in thresholds. Timeline and Markdown reporting are presentation
 layers over recorded evidence and existing verdicts; they do not infer missing
-state. Future work includes richer run-to-run regression analysis, real automatic
-observer completion validation, additional expired-resourceVersion validation,
-and release/compatibility automation. Run manifests, MCP/Node evidence analysis,
-and comparable-run analysis are already implemented.
+state. Run-to-run comparison includes operator contracts, evidence-only MCP/Node
+differences, descriptive observed timing, and optional explicit-policy
+regressions. Remaining work includes real automatic observer completion
+validation, additional expired-resourceVersion validation, and
+release/compatibility automation.

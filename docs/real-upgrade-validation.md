@@ -76,6 +76,9 @@ jq '{runId,status,source,operators,machineConfigPools,nodes,error}' ./runs/REPLA
 ./reconcile-guard verify-lifecycle-policy ./runs/REPLACE_WITH_RUN_ID ./policy.yaml --output text
 # Optional: compare against a previous stopped recording
 ./reconcile-guard compare-runs ./baseline/REPLACE_WITH_RUN_ID ./runs/REPLACE_WITH_RUN_ID
+# Optional: compare the same reviewed lifecycle policy against both runs
+./reconcile-guard compare-runs ./baseline/REPLACE_WITH_RUN_ID ./runs/REPLACE_WITH_RUN_ID \
+  --policy ./policy.yaml
 ```
 
 The run must be `stopped`. `record-live` exit0 only confirms clean persistence;
