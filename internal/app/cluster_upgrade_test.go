@@ -35,7 +35,7 @@ func TestVerifyClusterUpgrade(t *testing.T) {
 	output := stdout.String()
 
 	expected := []string{
-		"Aggregate verdict: PASS",
+		"Operator aggregate verdict: PASS",
 		"Operators: 2",
 		"Passed: 2",
 		"Operator: ingress",
@@ -119,7 +119,7 @@ func TestVerifyClusterUpgradeFail(t *testing.T) {
 
 	if !strings.Contains(
 		stdout.String(),
-		"Aggregate verdict: FAIL",
+		"Operator aggregate verdict: FAIL",
 	) {
 		t.Fatalf(
 			"unexpected stdout:\n%s",

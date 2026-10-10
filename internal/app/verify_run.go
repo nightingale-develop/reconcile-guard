@@ -4,7 +4,9 @@ import (
 	"fmt"
 
 	"github.com/nightingale-develop/reconcile-guard/internal/contracts"
+	"github.com/nightingale-develop/reconcile-guard/internal/machineconfig"
 	"github.com/nightingale-develop/reconcile-guard/internal/result"
+	corev1 "k8s.io/api/core/v1"
 )
 
 type auxiliaryRunReport struct {
@@ -34,8 +36,10 @@ func (c cli) verifyRun(
 		return 1
 	}
 
+	overall := recordedRunVerdict(report, auxiliary)
 	if c.output == outputJSON {
 		resultReport := contracts.ClusterUpgradeResult(report)
+		resultReport.Verdict = result.Verdict(overall)
 		for _, pool := range auxiliary.MachineConfigPools {
 			contract := contracts.MachineConfigPoolLifecycleResult(pool)
 			resultReport.MachineConfigPools = append(resultReport.MachineConfigPools, result.ResourceResult{
@@ -59,11 +63,40 @@ func (c cli) verifyRun(
 	} else {
 		fmt.Fprintln(c.stdout, "Run:", input.Manifest.RunID)
 		fmt.Fprintln(c.stdout, "Cluster ID:", input.Manifest.Source.ClusterID)
+		fmt.Fprintln(c.stdout, "Run verdict:", overall)
 		c.printClusterUpgradeReport(report)
 		c.printAuxiliaryRunReport(auxiliary)
 	}
 
-	return contractExitCode(report.Verdict)
+	return contractExitCode(overall)
+}
+
+func recordedRunVerdict(operators contracts.ClusterUpgradeReport, auxiliary auxiliaryRunReport) contracts.ContractVerdict {
+	if operators.Verdict != contracts.ContractPass {
+		return operators.Verdict
+	}
+	if len(auxiliary.MachineConfigPools) == 0 || len(auxiliary.Nodes) == 0 {
+		return contracts.ContractInconclusive
+	}
+	for _, pool := range auxiliary.MachineConfigPools {
+		if pool.Verdict != contracts.ContractPass || len(pool.Evidence) == 0 {
+			return contracts.ContractInconclusive
+		}
+		last := pool.Evidence[len(pool.Evidence)-1]
+		if !last.Applicable || last.State.Phase != machineconfig.PhaseStable {
+			return contracts.ContractInconclusive
+		}
+	}
+	for _, node := range auxiliary.Nodes {
+		if node.Verdict != contracts.ContractPass || len(node.Evidence) == 0 {
+			return contracts.ContractInconclusive
+		}
+		last := node.Evidence[len(node.Evidence)-1]
+		if !last.Applicable || last.State.Ready != corev1.ConditionTrue || !last.State.ConfigAligned {
+			return contracts.ContractInconclusive
+		}
+	}
+	return contracts.ContractPass
 }
 
 func verifyRecordedRun(directory string) (runInput, contracts.ClusterUpgradeReport, error) {
@@ -127,5 +160,5 @@ func (c cli) printAuxiliaryRunReport(report auxiliaryRunReport) {
 			fmt.Fprintf(c.stdout, "    Last state: Ready=%s currentConfig=%q desiredConfig=%q aligned=%t kubelet=%q\n", last.Ready, last.CurrentMachineConfig, last.DesiredMachineConfig, last.ConfigAligned, last.KubeletVersion)
 		}
 	}
-	fmt.Fprintln(c.stdout, "Auxiliary MCP/Node verdicts are evidence-only and do not change the aggregate operator verdict.")
+	fmt.Fprintln(c.stdout, "MCP/Node lifecycle contracts are historical evidence; the run verdict also checks their last applicable state.")
 }

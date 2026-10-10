@@ -81,7 +81,7 @@ func (c cli) printClusterUpgradeReport(
 ) {
 	fmt.Fprintln(
 		c.stdout,
-		"Aggregate verdict:",
+		"Operator aggregate verdict:",
 		report.Verdict,
 	)
 

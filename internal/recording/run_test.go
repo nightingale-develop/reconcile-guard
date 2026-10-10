@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -333,5 +334,57 @@ func TestReadRunManifestValidation(t *testing.T) {
 				t.Fatalf("error=%v want %q", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestNewRunArtifactsArePrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX file modes are not enforced on Windows")
+	}
+	parent := filepath.Join(t.TempDir(), "new-runs")
+	start := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
+	run, err := StartRun(parent, "test", "https://api.example", start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkMode := func(path string, want os.FileMode) {
+		t.Helper()
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != want {
+			t.Errorf("%s: permissions %04o, want %04o", path, got, want)
+		}
+	}
+	checkMode(parent, 0700)
+	checkMode(run.Directory(), 0700)
+	checkMode(filepath.Join(run.Directory(), "run.json"), 0600)
+	if err := run.Finish(RunStatusStopped, start.Add(time.Minute), RunSnapshot{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	checkMode(filepath.Join(run.Directory(), "run.json"), 0600)
+}
+
+func TestStartRunLeavesExistingParentModeUnchanged(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX file modes are not enforced on Windows")
+	}
+	parent := filepath.Join(t.TempDir(), "already-existing")
+	if err := os.Mkdir(parent, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(parent, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := StartRun(parent, "test", "https://api.example", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0755 {
+		t.Fatalf("changed existing parent mode to %04o", got)
 	}
 }

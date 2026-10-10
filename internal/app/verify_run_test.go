@@ -9,8 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nightingale-develop/reconcile-guard/internal/contracts"
+	"github.com/nightingale-develop/reconcile-guard/internal/machineconfig"
+	nodehistory "github.com/nightingale-develop/reconcile-guard/internal/node"
 	"github.com/nightingale-develop/reconcile-guard/internal/recording"
 	"github.com/nightingale-develop/reconcile-guard/internal/result"
+	corev1 "k8s.io/api/core/v1"
 )
 
 func verifyRunFixture(t *testing.T) string {
@@ -78,7 +82,7 @@ func TestVerifyRunVerdicts(t *testing.T) {
 		name, old, new, verdict string
 		code                    int
 	}{
-		{name: "pass", verdict: "PASS", code: 0},
+		{name: "pass without MCP/Node evidence", verdict: "INCONCLUSIVE", code: 3},
 		{name: "fail", old: `"name":"operator","version":"4.20.0"`, new: `"name":"operator","version":"4.19.0"`, verdict: "FAIL", code: 2},
 		{name: "missing version evidence", old: `"versions":[{"name":"operator","version":"4.20.0"}]`, new: `"versions":[]`, verdict: "INCONCLUSIVE", code: 3},
 	} {
@@ -95,7 +99,7 @@ func TestVerifyRunVerdicts(t *testing.T) {
 						t.Fatalf("exit=%d want=%d stdout=%s stderr=%s", code, tc.code, &out, &stderr)
 					}
 					if format == "text" {
-						if !strings.Contains(out.String(), "Aggregate verdict: "+tc.verdict) || !strings.Contains(out.String(), "Operators: 2") {
+						if !strings.Contains(out.String(), "Run verdict: "+tc.verdict) || !strings.Contains(out.String(), "Operators: 2") {
 							t.Fatalf("output=%s", &out)
 						}
 						return
@@ -124,7 +128,7 @@ func TestVerifyLegacyRunWithoutAuxiliaryFields(t *testing.T) {
 	})
 	for _, format := range []string{"text", "json"} {
 		var out, stderr bytes.Buffer
-		if code := Run([]string{"verify-run", directory, "--output", format}, &out, &stderr); code != 0 || stderr.Len() != 0 {
+		if code := Run([]string{"verify-run", directory, "--output", format}, &out, &stderr); code != 3 || stderr.Len() != 0 {
 			t.Fatalf("legacy verification exit=%d output=%s error=%s", code, &out, &stderr)
 		}
 	}
@@ -284,7 +288,8 @@ func TestVerifyRunRejectsMixedClusterEvidence(t *testing.T) {
 	}
 }
 
-func TestVerifyRunIncludesMachineConfigPoolAndNodeEvidence(t *testing.T) {
+func verifyRunWithAuxiliaryFixture(t *testing.T) string {
+	t.Helper()
 	dir := verifyRunFixture(t)
 	if err := os.Mkdir(filepath.Join(dir, "machine-config-pools"), 0755); err != nil {
 		t.Fatal(err)
@@ -301,14 +306,18 @@ func TestVerifyRunIncludesMachineConfigPoolAndNodeEvidence(t *testing.T) {
 		m.MachineConfigPools = []string{"master"}
 		m.Nodes = []string{"node-0"}
 	})
+	return dir
+}
 
+func TestVerifyRunIncludesMachineConfigPoolAndNodeEvidence(t *testing.T) {
+	dir := verifyRunWithAuxiliaryFixture(t)
 	for _, format := range []string{"text", "json"} {
 		var out, stderr bytes.Buffer
 		if code := Run([]string{"verify-run", dir, "--output", format}, &out, &stderr); code != 0 || stderr.Len() != 0 {
 			t.Fatalf("%s: exit=%d stdout=%s stderr=%s", format, code, &out, &stderr)
 		}
 		if format == "text" {
-			for _, want := range []string{"MachineConfigPool lifecycle evidence:", "Pool: master", "Node lifecycle evidence:", "Node: node-0", "evidence-only"} {
+			for _, want := range []string{"MachineConfigPool lifecycle evidence:", "Pool: master", "Node lifecycle evidence:", "Node: node-0", "Run verdict: PASS"} {
 				if !strings.Contains(out.String(), want) {
 					t.Fatalf("missing %q in %s", want, &out)
 				}
@@ -325,5 +334,100 @@ func TestVerifyRunIncludesMachineConfigPoolAndNodeEvidence(t *testing.T) {
 		if doc.Result.MachineConfigPools[0].Verdict != result.VerdictPass || doc.Result.Nodes[0].Verdict != result.VerdictPass {
 			t.Fatalf("auxiliary verdicts=%+v %+v", doc.Result.MachineConfigPools, doc.Result.Nodes)
 		}
+	}
+}
+
+func TestRecordedRunVerdictUsesLastApplicableAuxiliaryState(t *testing.T) {
+	pool := contracts.MachineConfigPoolEvidenceReport{
+		Verdict:  contracts.ContractPass,
+		Evidence: []contracts.MachineConfigPoolFinding{{Applicable: true, State: machineconfig.State{Phase: machineconfig.PhaseStable}}},
+	}
+	node := contracts.NodeEvidenceReport{
+		Verdict:  contracts.ContractPass,
+		Evidence: []contracts.NodeFinding{{Applicable: true, State: nodehistory.State{Ready: corev1.ConditionTrue, ConfigAligned: true}}},
+	}
+	good := auxiliaryRunReport{MachineConfigPools: []contracts.MachineConfigPoolEvidenceReport{pool}, Nodes: []contracts.NodeEvidenceReport{node}}
+	base := contracts.ClusterUpgradeReport{Verdict: contracts.ContractPass}
+	if got := recordedRunVerdict(base, good); got != contracts.ContractPass {
+		t.Fatalf("converged run=%s, want PASS", got)
+	}
+	cases := []struct {
+		name string
+		edit func(*auxiliaryRunReport)
+	}{
+		{"node not ready", func(a *auxiliaryRunReport) {
+			a.Nodes[0].Evidence = append(a.Nodes[0].Evidence, contracts.NodeFinding{Applicable: true, State: nodehistory.State{Ready: corev1.ConditionFalse, ConfigAligned: true}})
+		}},
+		{"node misaligned", func(a *auxiliaryRunReport) {
+			a.Nodes[0].Evidence = append(a.Nodes[0].Evidence, contracts.NodeFinding{Applicable: true, State: nodehistory.State{Ready: corev1.ConditionTrue, ConfigAligned: false}})
+		}},
+		{"pool updating", func(a *auxiliaryRunReport) {
+			a.MachineConfigPools[0].Evidence = append(a.MachineConfigPools[0].Evidence, contracts.MachineConfigPoolFinding{Applicable: true, State: machineconfig.State{Phase: machineconfig.PhaseUpdating}})
+		}},
+		{"pool outside completion window", func(a *auxiliaryRunReport) {
+			a.MachineConfigPools[0].Evidence = append(a.MachineConfigPools[0].Evidence, contracts.MachineConfigPoolFinding{Applicable: false, State: machineconfig.State{Phase: machineconfig.PhaseStable}})
+		}},
+		{"no recorded nodes", func(a *auxiliaryRunReport) { a.Nodes = nil }},
+		{"no recorded pools", func(a *auxiliaryRunReport) { a.MachineConfigPools = nil }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			aux := auxiliaryRunReport{
+				MachineConfigPools: append([]contracts.MachineConfigPoolEvidenceReport(nil), good.MachineConfigPools...),
+				Nodes:              append([]contracts.NodeEvidenceReport(nil), good.Nodes...),
+			}
+			tc.edit(&aux)
+			got := recordedRunVerdict(base, aux)
+			if got != contracts.ContractInconclusive || contractExitCode(got) != 3 {
+				t.Fatalf("overall=%s exit=%d; want INCONCLUSIVE/3", got, contractExitCode(got))
+			}
+		})
+	}
+	base.Verdict = contracts.ContractFail
+	if got := recordedRunVerdict(base, good); got != contracts.ContractFail {
+		t.Fatalf("lost operator FAIL: %s", got)
+	}
+}
+
+func TestVerifyRunDoesNotPassForUnhealthyRecordedNodeOrPool(t *testing.T) {
+	for _, resource := range []string{"node not ready", "pool updating"} {
+		t.Run(resource, func(t *testing.T) {
+			dir := verifyRunWithAuxiliaryFixture(t)
+			file, old, replacement := "nodes/node-0.jsonl", `"type":"Ready","status":"True"`, `"type":"Ready","status":"False"`
+			if resource == "pool updating" {
+				file, old, replacement = "machine-config-pools/master.jsonl", `"type":"Updating","status":"False"`, `"type":"Updating","status":"True"`
+			}
+			path := filepath.Join(dir, file)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(data, []byte(old)) {
+				t.Fatalf("missing %q", old)
+			}
+			data = bytes.Replace(data, []byte(old), []byte(replacement), 1)
+			if resource == "pool updating" {
+				data = bytes.Replace(data, []byte(`"type":"Updated","status":"True"`), []byte(`"type":"Updated","status":"False"`), 1)
+			}
+			writeRunTestFile(t, path, data)
+			for _, format := range []string{"text", "json"} {
+				var out, stderr bytes.Buffer
+				code := Run([]string{"verify-run", dir, "--output", format}, &out, &stderr)
+				if code != 3 || stderr.Len() != 0 {
+					t.Fatalf("%s: exit=%d stderr=%s stdout=%s", format, code, &stderr, &out)
+				}
+				if format == "json" {
+					var doc result.Document
+					if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
+						t.Fatal(err)
+					}
+					if doc.Result.Verdict != result.VerdictInconclusive {
+						t.Fatalf("unexpected overall verdict: %+v", doc)
+					}
+				} else if !strings.Contains(out.String(), "Run verdict: INCONCLUSIVE") || !strings.Contains(out.String(), "Operator aggregate verdict: PASS") {
+					t.Fatalf("text lacks independent verdicts: %s", &out)
+				}
+			}
+		})
 	}
 }

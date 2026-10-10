@@ -100,7 +100,7 @@ func TestReportRunPreservesVerdictAndPresentationExit(t *testing.T) {
 			dir := verifyRunFixture(t)
 			changeRunHistory(t, dir, `"version":"4.20.0"`, `"version":"`+tc.version+`"`)
 			var out, stderr bytes.Buffer
-			if code := Run([]string{"report-run", dir}, &out, &stderr); code != 0 || !strings.Contains(out.String(), "| Aggregate verdict | "+tc.verdict+" |") {
+			if code := Run([]string{"report-run", dir}, &out, &stderr); code != 0 || !strings.Contains(out.String(), "| Operator aggregate verdict | "+tc.verdict+" |") {
 				t.Fatalf("exit=%d stdout=%s stderr=%s", code, &out, &stderr)
 			}
 		})
@@ -145,7 +145,7 @@ defaults:
 			if code := Run([]string{"report-run", dir, "--policy", policy}, &out, &stderr); code != 0 || stderr.Len() != 0 {
 				t.Fatalf("exit=%d stdout=%s stderr=%s", code, &out, &stderr)
 			}
-			for _, want := range []string{"| Aggregate verdict | PASS |", "| Verdict | " + tc.verdict + " |", "| Node/node-0 | node-ready-post-completion-policy | " + tc.verdict + " |"} {
+			for _, want := range []string{"| Operator aggregate verdict | PASS |", "| Verdict | " + tc.verdict + " |", "| Node/node-0 | node-ready-post-completion-policy | " + tc.verdict + " |"} {
 				if !strings.Contains(out.String(), want) {
 					t.Fatalf("missing %q in %s", want, &out)
 				}

@@ -5,11 +5,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
+	machineconfigv1 "github.com/openshift/api/machineconfiguration/v1"
+	corev1 "k8s.io/api/core/v1"
+
+	"github.com/nightingale-develop/reconcile-guard/internal/machineconfig"
+	nodehistory "github.com/nightingale-develop/reconcile-guard/internal/node"
 
 	"github.com/nightingale-develop/reconcile-guard/internal/collector"
 	"github.com/nightingale-develop/reconcile-guard/internal/operator"
@@ -220,5 +226,55 @@ func TestJSONLRecorderErrors(t *testing.T) {
 	o.Name = "ingress"
 	if err := r.AppendOperator(operator.Observation{Operator: o, ObservedAt: time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)}); err == nil {
 		t.Fatal("lost serialization error")
+	}
+}
+
+func TestJSONLRecorderArtifactsArePrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX file modes are not enforced on Windows")
+	}
+	root := filepath.Join(t.TempDir(), "new-output")
+	r, err := NewJSONLRecorder(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"", "operators", "machine-config-pools", "nodes"} {
+		info, err := os.Stat(filepath.Join(root, path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0700 {
+			t.Errorf("%s has mode %04o, want 0700", path, info.Mode().Perm())
+		}
+	}
+	at := time.Now().UTC()
+	v := configv1.ClusterVersion{}
+	v.APIVersion, v.Kind, v.Name = "config.openshift.io/v1", "ClusterVersion", "version"
+	if err := r.AppendClusterVersion(upgrade.ClusterVersionObservation{ObservedAt: at, ClusterVersion: v}); err != nil {
+		t.Fatal(err)
+	}
+	o := configv1.ClusterOperator{}
+	o.APIVersion, o.Kind, o.Name = "config.openshift.io/v1", "ClusterOperator", "ingress"
+	if err := r.AppendOperator(operator.Observation{ObservedAt: at, Operator: o}); err != nil {
+		t.Fatal(err)
+	}
+	mcp := machineconfigv1.MachineConfigPool{}
+	mcp.APIVersion, mcp.Kind, mcp.Name = "machineconfiguration.openshift.io/v1", "MachineConfigPool", "master"
+	if err := r.AppendMachineConfigPool(machineconfig.Observation{ObservedAt: at, Pool: mcp}); err != nil {
+		t.Fatal(err)
+	}
+	n := corev1.Node{}
+	n.APIVersion, n.Kind, n.Name = "v1", "Node", "node-0"
+	if err := r.AppendNode(nodehistory.Observation{ObservedAt: at, Node: n}); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"cluster-version.jsonl", "operators/ingress.jsonl", "machine-config-pools/master.jsonl", "nodes/node-0.jsonl"} {
+		info, err := os.Stat(filepath.Join(root, path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0600 {
+			t.Errorf("%s has mode %04o, want 0600", path, info.Mode().Perm())
+		}
 	}
 }

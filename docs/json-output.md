@@ -19,7 +19,10 @@ valid. Evidence can carry
 observations, intervals, expected/actual values, correlation, reasons, messages,
 policy sources and contract-specific attributes. Empty optional fields are
 omitted. MCP/Node entries emitted by `verify-run` contain evidence-only lifecycle contracts;
-their verdicts do not change the top-level aggregate operator verdict.
+their historical contract verdicts remain separate from the top-level run
+verdict, which also checks the last applicable MCP/Node states. Without
+sufficient converged auxiliary evidence, the overall `verify-run` verdict is
+INCONCLUSIVE even if every operator contract passes.
 
 `verify-lifecycle-policy` reuses the same `result` envelope but its top-level
 verdict aggregates only the explicit policy contracts. Operator entries contain

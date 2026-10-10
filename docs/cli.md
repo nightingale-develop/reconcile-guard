@@ -30,6 +30,9 @@ GET on ClusterVersion. Generated runs contain `run.json`, a ClusterVersion JSONL
 stream, per-operator streams, per-MCP streams, and per-Node streams.
 `capture-live` needs GET ClusterVersion and LIST access to ClusterOperators,
 MachineConfigPools, and Nodes.
+Recorder-created run directories and resource directories use mode `0700`;
+new run metadata and JSONL files use `0600` (subject to the process umask).
+Existing files and parent directories are not permission-rewritten.
 Client-go manages reconnect/relist. Initial Unauthorized, Forbidden, missing
 ClusterVersion and sink errors are fatal; Unauthorized after sync is retried.
 ClusterOperator deletion is ignored.
@@ -57,7 +60,10 @@ Final reads append unchanged resourceVersions with fresh per-resource UTC
 timestamps; WATCH still deduplicates them. Final API/write errors mark the run
 failed and exit `1`. After success, the summary includes run/cluster IDs, target
 version/image, completion flag, final snapshot status and operator verdict counts.
-Both automatic and manual stopping return the saved-run verification exit code.
+Exit `0` requires observed completion of the active target, a successful final
+snapshot, and PASS for the overall saved-run result. A manual stop without
+observed completion exits `3` (INCONCLUSIVE), even when the captured partial
+evidence happens to pass operator checks. Runtime/final-snapshot errors exit `1`.
 
 ## Explicit lifecycle policy
 
@@ -132,7 +138,11 @@ verdict semantics.
 and operator-version consistency. When MCP/Node histories are present, it also
 reconstructs their lifecycle evidence and correlates post-completion samples with
 the ClusterVersion timeline. Those base MCP/Node evidence contracts do not change
-the aggregate operator verdict and do not create FAIL. Explicit policy FAILs are
+the operator aggregate or create FAIL. The overall `verify-run` result is PASS
+only with operator PASS and recorded, applicable post-completion evidence that
+the last MCP states are STABLE and the last Node states are Ready and config
+aligned. Missing or non-converged MCP/Node evidence yields INCONCLUSIVE rather
+than a run-wide PASS. Explicit policy FAILs are
 reported only by `verify-lifecycle-policy`. `verify-run` does not include
 Progressing duration.
 `compare-runs` allows different clusters and targets after local validation.

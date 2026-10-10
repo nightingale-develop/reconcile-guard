@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nightingale-develop/reconcile-guard/internal/contracts"
 	"github.com/nightingale-develop/reconcile-guard/internal/machineconfig"
 	nodehistory "github.com/nightingale-develop/reconcile-guard/internal/node"
 	"github.com/nightingale-develop/reconcile-guard/internal/operator"
@@ -132,6 +133,28 @@ func TestObservingSinkDoesNotCompleteAfterCancellationOrWriteFailure(t *testing.
 			}
 			if observer.completed || store.written != wantWritten {
 				t.Fatalf("completed=%v written=%d", observer.completed, store.written)
+			}
+		})
+	}
+}
+
+func TestObservedUpgradeVerdictRequiresCompletion(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		completed bool
+		verified  contracts.ContractVerdict
+		want      contracts.ContractVerdict
+	}{
+		{"completed pass", true, contracts.ContractPass, contracts.ContractPass},
+		{"completed fail", true, contracts.ContractFail, contracts.ContractFail},
+		{"completed inconclusive", true, contracts.ContractInconclusive, contracts.ContractInconclusive},
+		{"incomplete pass", false, contracts.ContractPass, contracts.ContractInconclusive},
+		{"incomplete fail", false, contracts.ContractFail, contracts.ContractInconclusive},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := observedUpgradeVerdict(tc.completed, tc.verified)
+			if got != tc.want || contractExitCode(got) != contractExitCode(tc.want) {
+				t.Fatalf("verdict=%s want=%s", got, tc.want)
 			}
 		})
 	}

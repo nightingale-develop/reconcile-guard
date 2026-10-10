@@ -29,7 +29,7 @@ func NewJSONLRecorder(
 		)
 	}
 
-	if err := os.MkdirAll(directory, 0755); err != nil {
+	if err := os.MkdirAll(directory, 0700); err != nil {
 		return nil, fmt.Errorf("create output directory: %w", err)
 	}
 	root, err := os.OpenRoot(directory)
@@ -40,7 +40,7 @@ func NewJSONLRecorder(
 	directories := []string{"operators", "machine-config-pools", "nodes"}
 
 	for _, path := range directories {
-		if err := root.MkdirAll(path, 0755); err != nil {
+		if err := root.MkdirAll(path, 0700); err != nil {
 			return nil, fmt.Errorf(
 				"create output directory %q: %w",
 				path,
@@ -242,7 +242,7 @@ func appendJSONLine(
 		os.O_CREATE|
 			os.O_WRONLY|
 			os.O_APPEND,
-		0644,
+		0600,
 	)
 	if err != nil {
 		return err

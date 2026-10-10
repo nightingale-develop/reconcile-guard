@@ -57,7 +57,7 @@ func TestRecordedUpgradeRunPipeline(t *testing.T) {
 	}
 	for _, format := range []string{"text", "json"} {
 		var out, stderr bytes.Buffer
-		if code := Run([]string{"verify-run", run.Directory(), "--output=" + format}, &out, &stderr); code != 0 || stderr.Len() != 0 {
+		if code := Run([]string{"verify-run", run.Directory(), "--output=" + format}, &out, &stderr); code != 3 || stderr.Len() != 0 {
 			t.Fatalf("verify %s: code=%d out=%s err=%s", format, code, &out, &stderr)
 		}
 		if format == "json" {
@@ -65,7 +65,7 @@ func TestRecordedUpgradeRunPipeline(t *testing.T) {
 			if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
 				t.Fatal(err)
 			}
-			if doc.Result.Verdict != result.VerdictPass {
+			if doc.Result.Verdict != result.VerdictInconclusive || doc.Result.Operators[0].Verdict != result.VerdictPass {
 				t.Fatalf("result=%+v", doc.Result)
 			}
 		}

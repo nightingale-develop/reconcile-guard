@@ -49,7 +49,8 @@ go build -o reconcile-guard ./cmd/reconcile-guard
 
 `observe-upgrade` records immediately, stops after the phase analyzer observes
 COMPLETED for the active version and image, performs final reads, and verifies
-the saved run. Ctrl+C saves a partial run without claiming live completion.
+the saved run. Ctrl+C saves a partial run without claiming live completion and returns
+INCONCLUSIVE (`3`) if completion was not actually observed.
 `record-live` only records. `verify-run` provides base operator checks plus
 evidence-only MCP/Node checks. `verify-lifecycle-policy` applies explicit user
 thresholds; `timeline-run` merges recorded transitions; `report-run` renders
@@ -80,8 +81,10 @@ contracts, reports MCP/Node evidence and recorded timing deltas, and can compare
 explicit lifecycle-policy verdicts when `--policy` is supplied. Descriptive
 timing and evidence differences do not become regressions by themselves.
 Timing deltas are omitted when final desired versions or images differ.
-The base `verify-run` MCP/Node checks remain evidence-only and do not change the
-aggregate operator verdict. Policy FAILs require thresholds in the supplied
+The base `verify-run` MCP/Node contracts remain evidence-only and do not change
+the operator aggregate verdict. The overall run result also requires the last
+recorded MCP/Node states to be post-completion and converged; incomplete or
+non-converged evidence yields INCONCLUSIVE, not PASS. Policy FAILs require thresholds in the supplied
 policy. Timeline and Markdown rendering do not add verdict semantics.
 
 ## License

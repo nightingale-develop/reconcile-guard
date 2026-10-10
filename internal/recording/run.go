@@ -102,7 +102,7 @@ func StartRunForCommand(parentDirectory, toolVersion, server string, startedAt t
 
 	if err := os.MkdirAll(
 		parentDirectory,
-		0755,
+		0700,
 	); err != nil {
 		return nil, fmt.Errorf(
 			"create run root: %w",
@@ -112,7 +112,7 @@ func StartRunForCommand(parentDirectory, toolVersion, server string, startedAt t
 
 	if err := os.Mkdir(
 		directory,
-		0755,
+		0700,
 	); err != nil {
 		return nil, fmt.Errorf(
 			"create run directory: %w",
@@ -275,7 +275,7 @@ func (r *Run) writeLocked() error {
 	if err := os.WriteFile(
 		temp,
 		data,
-		0644,
+		0600,
 	); err != nil {
 		_ = os.Remove(temp)
 		return fmt.Errorf(

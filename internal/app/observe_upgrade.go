@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/nightingale-develop/reconcile-guard/internal/collector"
+	"github.com/nightingale-develop/reconcile-guard/internal/contracts"
 	"github.com/nightingale-develop/reconcile-guard/internal/upgrade"
 )
 
@@ -107,8 +108,18 @@ func (c cli) summarizeObservedRun(directory string, observer *upgradeObserver) i
 	fmt.Fprintf(c.stdout, "Observed target version: %q\nObserved target image: %q\n", observer.targetVersion, observer.targetImage)
 	fmt.Fprintln(c.stdout, "Completion observed:", observer.completed)
 	fmt.Fprintln(c.stdout, "Final snapshot: captured")
-	fmt.Fprintln(c.stdout, "Verdict:", report.Verdict)
+	baseVerdict := recordedRunVerdict(report, auxiliary)
+	verdict := observedUpgradeVerdict(observer.completed, baseVerdict)
+	fmt.Fprintln(c.stdout, "Run verdict:", verdict)
+	fmt.Fprintln(c.stdout, "Operator aggregate verdict:", report.Verdict)
 	fmt.Fprintf(c.stdout, "Operators: %d (PASS=%d FAIL=%d INCONCLUSIVE=%d)\n", len(report.Operators), report.PassedOperators, report.FailedOperators, report.InconclusiveOperators)
 	fmt.Fprintf(c.stdout, "MachineConfigPools: %d, Nodes: %d (evidence-only)\n", len(auxiliary.MachineConfigPools), len(auxiliary.Nodes))
-	return contractExitCode(report.Verdict)
+	return contractExitCode(verdict)
+}
+
+func observedUpgradeVerdict(completed bool, verified contracts.ContractVerdict) contracts.ContractVerdict {
+	if !completed {
+		return contracts.ContractInconclusive
+	}
+	return verified
 }

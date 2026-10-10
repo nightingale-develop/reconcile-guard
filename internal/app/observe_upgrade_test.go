@@ -254,7 +254,7 @@ func TestObserveUpgradeLifecycle(t *testing.T) {
 		want                           int
 	}{
 		{"stable start with ambiguous operator sample", "stable", "4.20.0", 3},
-		{"mid upgrade pass", "updating", "4.20.0", 0},
+		{"mid upgrade operator pass, missing MCP/Node", "updating", "4.20.0", 3},
 		{"version failure", "updating", "4.19.0", 2},
 		{"missing version", "updating", "", 3},
 		{"unknown initial", "unknown", "4.20.0", 3},
@@ -334,7 +334,7 @@ func TestObserveUpgradeWatchAuthorization(t *testing.T) {
 			if status == http.StatusUnauthorized {
 				p.send(observerVersion("11", "updating", "4.20.0", "image-a"), 2)
 				p.send(observerVersion("12", "stable", "4.20.0", "image-a"), 3)
-				p.finish(0, true)
+				p.finish(3, true)
 			} else {
 				_ = p.cmd.Wait()
 				if p.ctx.Err() != nil || p.cmd.ProcessState.ExitCode() != 1 {
@@ -398,5 +398,27 @@ func TestObserveUpgradeManualStopFinalSnapshotCannotClaimCompletion(t *testing.T
 	}
 	if states[1].Phase != upgrade.UpgradePhaseCompleted {
 		t.Fatalf("final snapshot did not exercise completion: %+v", states)
+	}
+}
+
+func TestObserveUpgradeSummaryRequiresObservedCompletion(t *testing.T) {
+	dir := verifyRunWithAuxiliaryFixture(t)
+	for _, tc := range []struct {
+		name      string
+		completed bool
+		wantCode  int
+		want      string
+	}{
+		{"not observed", false, 3, "INCONCLUSIVE"},
+		{"observed", true, 0, "PASS"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out, stderr bytes.Buffer
+			c := cli{stdout: &out, stderr: &stderr}
+			got := c.summarizeObservedRun(dir, &upgradeObserver{completed: tc.completed})
+			if got != tc.wantCode || stderr.Len() != 0 || !strings.Contains(out.String(), "Run verdict: "+tc.want) || !strings.Contains(out.String(), "Operator aggregate verdict: PASS") {
+				t.Fatalf("exit=%d want=%d stdout=%s stderr=%s", got, tc.wantCode, &out, &stderr)
+			}
+		})
 	}
 }
