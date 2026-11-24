@@ -200,6 +200,7 @@ func (p *observerProcess) finish(wantCode int, completed bool) {
 	if err != nil {
 		p.t.Fatal(err)
 	}
+	assertRunVersionMatchesCLI(p.t, m)
 	wantStatus := recording.RunStatusStopped
 	if wantCode == 1 {
 		wantStatus = recording.RunStatusFailed

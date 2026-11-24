@@ -192,3 +192,18 @@ and `1` for errors. `record-live` returns `0` on clean shutdown, without verific
 | `1` | Input, usage, API, finalization, or output error |
 | `2` | FAIL or detected comparison regression |
 | `3` | INCONCLUSIVE |
+
+## Run verdict explanations
+
+`verify-run` prints run verdict reasons with resource identities and, when
+available, capture timestamps and timeline correlation. `report-run` includes
+the same reasons in its verification summary. Historical MCP/Node contracts can
+remain PASS while the run is INCONCLUSIVE because its last observation is
+non-converged or not confidently correlated after completion. Missing histories
+are reported explicitly. Operator FAIL/INCONCLUSIVE keeps its existing precedence;
+its reasons point to the operator contract results.
+
+The baseline/candidate verification summaries in `compare-runs` use the same
+run verdict and reasons as `verify-run`. The comparison verdict still describes
+regressions among comparable contracts, so it may be PASS even when a run's
+verification is INCONCLUSIVE. See [JSON output](json-output.md) for reason fields.

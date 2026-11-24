@@ -24,6 +24,20 @@ verdict, which also checks the last applicable MCP/Node states. Without
 sufficient converged auxiliary evidence, the overall `verify-run` verdict is
 INCONCLUSIVE even if every operator contract passes.
 
+`result.reasons` explains the checks preventing a run PASS. Each entry contains
+`code`, `message`, and the resource kind/name where relevant. `observedAt` refers
+to the recorded observation being checked; `correlation` identifies its relation
+to the ClusterVersion timeline. Missing histories have no observation timestamp.
+The optional array is omitted for PASS. `result.details.values.operatorVerdict`
+keeps the operator aggregate separate from the overall run verdict.
+
+Reason codes include `missing-histories`, `missing-evidence`,
+`last-observation-not-applicable`, `pool-not-stable`, `node-not-ready`,
+`node-config-not-aligned`, `lifecycle-evidence-not-passed`, and
+`operator-contracts-not-passed`. Operator reasons refer to the existing contract
+results and evidence. Auxiliary reasons identify the first unmet check for each
+resource; they do not diagnose its underlying cause or add new FAIL semantics.
+
 `verify-lifecycle-policy` reuses the same `result` envelope but its top-level
 verdict aggregates only the explicit policy contracts. Operator entries contain
 condition-duration contracts; MCP and Node entries contain post-completion policy
@@ -33,6 +47,12 @@ A policy FAIL therefore means a supplied policy threshold was directly violated,
 not that an OpenShift product guarantee was violated.
 
 JSON summarizes the selected checks; it does not embed input snapshots.
+
+`compare-runs` uses the same overall run assessment as `verify-run` for
+`comparison.baseline.verificationVerdict` and
+`comparison.candidate.verificationVerdict`. Each summary may include
+`verificationReasons`, with the same entries as `verify-run`'s `result.reasons`.
+These summaries do not change the comparison verdict or its exit code.
 
 `compare-runs` uses a `comparison` envelope with baseline/candidate summaries,
 scope, operator contract changes, optional MCP/Node evidence comparisons, and

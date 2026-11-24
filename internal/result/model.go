@@ -20,10 +20,20 @@ type Document struct {
 
 type Report struct {
 	Verdict            Verdict          `json:"verdict"`
+	Reasons            []VerdictReason  `json:"reasons,omitempty"`
 	Details            *Details         `json:"details,omitempty"`
 	Operators          []OperatorResult `json:"operators"`
 	MachineConfigPools []ResourceResult `json:"machineConfigPools,omitempty"`
 	Nodes              []ResourceResult `json:"nodes,omitempty"`
+}
+
+type VerdictReason struct {
+	Code         string     `json:"code"`
+	Message      string     `json:"message"`
+	ResourceKind string     `json:"resourceKind,omitempty"`
+	ResourceName string     `json:"resourceName,omitempty"`
+	ObservedAt   *time.Time `json:"observedAt,omitempty"`
+	Correlation  string     `json:"correlation,omitempty"`
 }
 
 type OperatorResult struct {

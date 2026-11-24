@@ -6,12 +6,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/nightingale-develop/reconcile-guard/internal/recording"
 	"github.com/nightingale-develop/reconcile-guard/internal/regression"
+	"github.com/nightingale-develop/reconcile-guard/internal/result"
 	"github.com/nightingale-develop/reconcile-guard/internal/upgrade"
 )
 
@@ -38,7 +40,7 @@ func TestCompareRunsVerdicts(t *testing.T) {
 		{"INCONCLUSIVE", "FAIL", "INCONCLUSIVE", "INCONCLUSIVE", 3},
 	} {
 		t.Run(tc.before+"_"+tc.after, func(t *testing.T) {
-			baseline, candidate := verifyRunFixture(t), verifyRunFixture(t)
+			baseline, candidate := verifyRunWithAuxiliaryFixture(t), verifyRunWithAuxiliaryFixture(t)
 			setComparisonFixtureVerdict(t, baseline, tc.before)
 			setComparisonFixtureVerdict(t, candidate, tc.after)
 			for _, options := range [][]string{nil, {"--output", "text"}, {"--output=text"}, {"--output", "json"}, {"--output=json"}} {
@@ -430,6 +432,122 @@ func TestCompareRunsTimingTextAcrossTargets(t *testing.T) {
 			}
 			if strings.Contains(out.String(), " delta=") == different || strings.Contains(out.String(), "[REGRESSION]") || strings.Contains(out.String(), "[IMPROVEMENT]") {
 				t.Fatalf("unexpected timing interpretation: %s", &out)
+			}
+		})
+	}
+}
+
+func TestCompareRunsVerificationMatchesVerifyRun(t *testing.T) {
+	for _, tc := range []struct {
+		name, file, old, replacement string
+		missing, historicalPass      bool
+	}{
+		{name: "converged"},
+		{name: "missing histories", missing: true},
+		{name: "node not ready", file: "nodes/node-0.jsonl", old: `"type":"Ready","status":"True"`, replacement: `"type":"Ready","status":"False"`},
+		{name: "pool updating", file: "machine-config-pools/master.jsonl", old: `"type":"Updated","status":"True"},{"type":"Updating","status":"False"`, replacement: `"type":"Updated","status":"False"},{"type":"Updating","status":"True"`},
+		{name: "node historical pass then not ready", file: "nodes/node-0.jsonl", old: `"type":"Ready","status":"True"`, replacement: `"type":"Ready","status":"False"`, historicalPass: true},
+		{name: "pool historical pass then updating", file: "machine-config-pools/master.jsonl", old: `"type":"Updated","status":"True"},{"type":"Updating","status":"False"`, replacement: `"type":"Updated","status":"False"},{"type":"Updating","status":"True"`, historicalPass: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			baseline := verifyRunWithAuxiliaryFixture(t)
+			var candidate string
+			if tc.missing {
+				candidate = verifyRunFixture(t)
+			} else {
+				candidate = verifyRunWithAuxiliaryFixture(t)
+			}
+			if tc.file != "" {
+				path := filepath.Join(candidate, tc.file)
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Contains(data, []byte(tc.old)) {
+					t.Fatalf("fixture missing %q", tc.old)
+				}
+				changed := bytes.ReplaceAll(data, []byte(tc.old), []byte(tc.replacement))
+				if tc.historicalPass {
+					changed = bytes.Replace(changed, []byte(`"observedAt":"2026-09-25T10:10:00Z"`), []byte(`"observedAt":"2026-09-25T10:12:00Z"`), 1)
+					changed = append(data, changed...)
+					cvPath := filepath.Join(candidate, "cluster-version.jsonl")
+					versions, err := os.ReadFile(cvPath)
+					if err != nil {
+						t.Fatal(err)
+					}
+					lines := bytes.Split(bytes.TrimSpace(versions), []byte("\n"))
+					last := bytes.Replace(lines[len(lines)-1], []byte(`"observedAt":"2026-09-25T10:10:00Z"`), []byte(`"observedAt":"2026-09-25T10:12:00Z"`), 1)
+					writeRunTestFile(t, cvPath, append(versions, append(last, '\n')...))
+				}
+				writeRunTestFile(t, path, changed)
+			}
+
+			for _, swapped := range []bool{false, true} {
+				t.Run("swapped="+strconv.FormatBool(swapped), func(t *testing.T) {
+					directories := []string{baseline, candidate}
+					if swapped {
+						directories[0], directories[1] = directories[1], directories[0]
+					}
+					verified := make([]result.Document, 2)
+					for i, directory := range directories {
+						var out, stderr bytes.Buffer
+						code := Run([]string{"verify-run", directory, "--output=json"}, &out, &stderr)
+						wantCode := 0
+						wantVerdict := result.VerdictPass
+						if directory == candidate && (tc.missing || tc.file != "") {
+							wantCode, wantVerdict = 3, result.VerdictInconclusive
+						}
+						if code != wantCode || stderr.Len() != 0 {
+							t.Fatalf("verify-run exit=%d want=%d stdout=%s stderr=%s", code, wantCode, &out, &stderr)
+						}
+						if err := json.Unmarshal(out.Bytes(), &verified[i]); err != nil {
+							t.Fatal(err)
+						}
+						if verified[i].SchemaVersion != "1" || verified[i].Result.Verdict != wantVerdict {
+							t.Fatalf("verification=%+v", verified[i])
+						}
+						if wantCode == 3 && len(verified[i].Result.Reasons) == 0 {
+							t.Fatal("inconclusive verification lacks reasons")
+						}
+						if tc.historicalPass && directory == candidate && (verified[i].Result.Nodes[0].Verdict != result.VerdictPass || verified[i].Result.MachineConfigPools[0].Verdict != result.VerdictPass) {
+							t.Fatal("fixture must retain PASS historical contracts with an adverse last observation")
+						}
+					}
+
+					for _, format := range []string{"text", "json"} {
+						var out, stderr bytes.Buffer
+						if code := Run([]string{"compare-runs", directories[0], directories[1], "--output", format}, &out, &stderr); code != 0 || stderr.Len() != 0 {
+							t.Fatalf("comparison exit=%d stdout=%s stderr=%s", code, &out, &stderr)
+						}
+						if format == "text" {
+							for _, want := range []string{"Baseline verification: " + string(verified[0].Result.Verdict), "Candidate verification: " + string(verified[1].Result.Verdict), "Comparison verdict: PASS"} {
+								if !strings.Contains(out.String(), want) {
+									t.Fatalf("missing %q: %s", want, &out)
+								}
+							}
+							for _, verification := range verified {
+								for _, reason := range verification.Result.Reasons {
+									if !strings.Contains(out.String(), reason.Code) || !strings.Contains(out.String(), reason.Message) {
+										t.Fatalf("comparison omits verification reason %+v: %s", reason, &out)
+									}
+								}
+							}
+							continue
+						}
+						var doc regression.Document
+						if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
+							t.Fatal(err)
+						}
+						if doc.SchemaVersion != "1" || doc.Comparison.Verdict != result.VerdictPass {
+							t.Fatalf("comparison=%+v", doc)
+						}
+						for i, summary := range []regression.RunSummary{doc.Comparison.Baseline, doc.Comparison.Candidate} {
+							if summary.VerificationVerdict != verified[i].Result.Verdict || !reflect.DeepEqual(summary.VerificationReasons, verified[i].Result.Reasons) {
+								t.Fatalf("summary=%+v verification=%+v", summary, verified[i].Result)
+							}
+						}
+					}
+				})
 			}
 		})
 	}

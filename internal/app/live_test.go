@@ -567,6 +567,7 @@ func TestRecordLiveSignalsAndWriteError(t *testing.T) {
 			if readErr != nil {
 				t.Fatal(readErr)
 			}
+			assertRunVersionMatchesCLI(t, manifest)
 			wantStatus := recording.RunStatusStopped
 			if tc.writeError || tc.finalError != "" {
 				wantStatus = recording.RunStatusFailed

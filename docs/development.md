@@ -13,6 +13,33 @@ git diff --check
 
 The race detector needs a supported platform and C toolchain.
 
+## Release version check
+
+`internal/version.Current` is the application version source for both the CLI
+`version` command and new run manifests' `toolVersion`. Keep the constant in sync
+with the intended `v<version>` release tag. JSON schema and policy API versions
+are independent; older recordings retain their original tool version.
+
+There is no repository CI or automated release workflow. Before creating a tag
+or publishing artifacts, set `RELEASE_TAG` to the intended tag and run this gate
+from the source revision being released:
+
+```sh
+go run ./internal/releasecheck "$RELEASE_TAG" &&
+  go build -o reconcile-guard ./cmd/reconcile-guard
+```
+
+The check exits `1` for a mismatch, an empty tag, or invalid arguments. It accepts
+only the exact `v<version>` tag, not a `git describe` value with a dirty suffix.
+It does not create or change tags. Any future release automation must run this
+gate with the release tag before building or publishing artifacts.
+
+Ordinary local builds and tests require no release tag or Git metadata. The check
+uses the source constant directly and needs no network or cluster access. To
+validate an existing tag's source, run it from that tagged revision when the
+checker is available; checking a modified working tree does not validate the
+unchanged source behind an existing tag.
+
 ## Layout
 
 | Path | Role |

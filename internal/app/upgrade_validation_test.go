@@ -78,7 +78,7 @@ func TestRecordedUpgradeRunPipeline(t *testing.T) {
 			if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
 				t.Fatal(err)
 			}
-			if doc.Comparison.Verdict != result.VerdictPass || doc.Comparison.Candidate.VerificationVerdict != result.VerdictPass {
+			if doc.Comparison.Verdict != result.VerdictPass || doc.Comparison.Baseline.VerificationVerdict != result.VerdictInconclusive || doc.Comparison.Candidate.VerificationVerdict != result.VerdictInconclusive {
 				t.Fatalf("comparison=%+v", doc.Comparison)
 			}
 		}

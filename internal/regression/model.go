@@ -44,11 +44,12 @@ type ResourceComparison struct {
 }
 
 type RunSummary struct {
-	RunID               string         `json:"runId"`
-	ClusterID           string         `json:"clusterId"`
-	FinalDesiredVersion string         `json:"finalDesiredVersion"`
-	FinalDesiredImage   string         `json:"finalDesiredImage,omitempty"`
-	VerificationVerdict result.Verdict `json:"verificationVerdict"`
+	RunID               string                 `json:"runId"`
+	ClusterID           string                 `json:"clusterId"`
+	FinalDesiredVersion string                 `json:"finalDesiredVersion"`
+	FinalDesiredImage   string                 `json:"finalDesiredImage,omitempty"`
+	VerificationVerdict result.Verdict         `json:"verificationVerdict"`
+	VerificationReasons []result.VerdictReason `json:"verificationReasons,omitempty"`
 }
 
 type Scope struct {

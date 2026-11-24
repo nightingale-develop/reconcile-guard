@@ -107,8 +107,8 @@ func (c cli) compareRuns(args []string) int {
 		fmt.Fprintln(c.stderr, "Error:", err)
 		return 1
 	}
-	comparison.Baseline = summarizeRun(baseline, before.Verdict)
-	comparison.Candidate = summarizeRun(candidate, after.Verdict)
+	comparison.Baseline = summarizeRun(baseline, assessRecordedRun(before, baselineAuxiliary))
+	comparison.Candidate = summarizeRun(candidate, assessRecordedRun(after, candidateAuxiliary))
 	comparison.Scope.SameFinalTarget = comparison.Baseline.FinalDesiredVersion == comparison.Candidate.FinalDesiredVersion && comparison.Baseline.FinalDesiredImage == comparison.Candidate.FinalDesiredImage
 	if !comparison.Scope.SameFinalTarget {
 		for i := range comparison.Timings {
@@ -167,14 +167,15 @@ func parseCompareRunsOptions(args []string) (compareRunsOptions, error) {
 	return options, nil
 }
 
-func summarizeRun(input runInput, verdict result.Verdict) regression.RunSummary {
+func summarizeRun(input runInput, assessment runAssessment) regression.RunSummary {
 	last := input.Versions[len(input.Versions)-1].ClusterVersion.Status.Desired
 	return regression.RunSummary{
 		RunID:               input.Manifest.RunID,
 		ClusterID:           input.Manifest.Source.ClusterID,
 		FinalDesiredVersion: last.Version,
 		FinalDesiredImage:   last.Image,
-		VerificationVerdict: verdict,
+		VerificationVerdict: assessment.Verdict,
+		VerificationReasons: assessment.Reasons,
 	}
 }
 
@@ -190,6 +191,7 @@ func (c cli) printComparison(report regression.Report) error {
 			item.label, item.summary.RunID, item.label, item.summary.ClusterID,
 			item.label, item.summary.FinalDesiredVersion, item.label, item.summary.FinalDesiredImage,
 			item.label, item.summary.VerificationVerdict)
+		printRunVerdictReasons(&text, item.summary.VerificationReasons)
 	}
 	fmt.Fprintf(&text, "Final targets match: %t\n", report.Scope.SameFinalTarget)
 	fmt.Fprintf(&text, "Common operators: %d\n", report.Scope.CommonOperators)

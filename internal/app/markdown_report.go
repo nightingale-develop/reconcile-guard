@@ -176,13 +176,29 @@ func renderMarkdownRunReport(
 	fmt.Fprintln(&out)
 	fmt.Fprintln(&out, "| Metric | Value |")
 	fmt.Fprintln(&out, "| --- | ---: |")
-	markdownRow(&out, "Run verdict", string(recordedRunVerdict(verification, auxiliary)))
+	assessment := assessRecordedRun(verification, auxiliary)
+	markdownRow(&out, "Run verdict", string(assessment.Verdict))
 	markdownRow(&out, "Operator aggregate verdict", string(verification.Verdict))
 	markdownRow(&out, "Operators", fmt.Sprint(len(verification.Operators)))
 	markdownRow(&out, "Passed operators", fmt.Sprint(verification.PassedOperators))
 	markdownRow(&out, "Failed operators", fmt.Sprint(verification.FailedOperators))
 	markdownRow(&out, "Inconclusive operators", fmt.Sprint(verification.InconclusiveOperators))
 	fmt.Fprintln(&out)
+	if len(assessment.Reasons) > 0 {
+		fmt.Fprintln(&out, "### Run verdict reasons")
+		fmt.Fprintln(&out)
+		fmt.Fprintln(&out, "| Resource | Code | Reason | Observed at | Correlation |")
+		fmt.Fprintln(&out, "| --- | --- | --- | --- | --- |")
+		for _, reason := range assessment.Reasons {
+			observedAt := ""
+			if reason.ObservedAt != nil {
+				observedAt = reason.ObservedAt.Format(time.RFC3339Nano)
+			}
+			fmt.Fprintf(&out, "| %s | %s | %s | %s | %s |\n",
+				markdownCell(verdictReasonResource(reason)), markdownCell(reason.Code), markdownCell(reason.Message), markdownCell(observedAt), markdownCell(reason.Correlation))
+		}
+		fmt.Fprintln(&out)
+	}
 
 	fmt.Fprintln(&out, "### ClusterOperators")
 	fmt.Fprintln(&out)
